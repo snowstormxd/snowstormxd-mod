@@ -23,9 +23,9 @@
 		]
 	},
 	"mixins": [
-		"snowstormxd_utility_mod.mixins.json",
+		"modid.mixins.json",
 		{
-			"config": "snowstormxd_utility_mod.client.mixins.json",
+			"config": "ExampleClientMixin.json",
 			"environment": "client"
 		}
 	],
