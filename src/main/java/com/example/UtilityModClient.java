@@ -272,12 +272,12 @@ private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
     private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
         List<ItemStack> armorItems = new ArrayList<>();
         for (ItemStack stack : player.getInventory().getArmorStacks()) { // Use getArmorStacks()
-        armorItems.add(stack);
-    }
-        }
-        Collections.reverse(armorItems); // Helmet first
+            armorItems.add(stack);
+        } // Closes for-loop
 
+        Collections.reverse(armorItems); // Helmet first
         HudElementsRenderer.renderArmorDisplay(drawContext, armorItems, armorHudX, armorHudY, false);
+
     }
 
     public static class HudElementsRenderer {
