@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"id": "snowstormxd_utility_mod"
+	"id": "snowstormxd_utility_mod",
 	"version": "${version}",
 	"name": "snowstormxd mod",
 	"description": "Utility mod for Minecraft v1.21.5",
