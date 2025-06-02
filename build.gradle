@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.10' // Consider using a stable Loom version if SNAPSHOT causes issues
+	id 'fabric-loom' version '1.10-SNAPSHOT' // Consider using a stable Loom version if SNAPSHOT causes issues
 	id 'maven-publish'
 }
 
