@@ -12,9 +12,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Environment(EnvType.CLIENT) // Mark this class as client-only
-public class UtilityModClient implements ClientModInitializer
+public class UtilityModClient implements ClientModInitializer{
 
-    public static final Logger LOGGER = LoggerFactory.getLogger(YourModMainClass.MOD_ID + "-client"); // Specific logger for client
+    public static final Logger LOGGER = LoggerFactory.getLogger(UtilityMod.MOD_ID + "_client");
     public static boolean showLightLevelOverlay = false; // State for our overlay
 
     // 1. Declare the KeyBinding
@@ -26,10 +26,10 @@ public class UtilityModClient implements ClientModInitializer
 
         // 2. Define and Register the KeyBinding
         lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + YourModMainClass.MOD_ID + ".toggle_light_overlay", // Translation key for the keybind name
+               "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
                 InputUtil.Type.KEYSYM, // The type of input (keyboard key)
                 GLFW.GLFW_KEY_L, // The default key (L key)
-                "category." + YourModMainClass.MOD_ID + ".main" // Translation key for the keybind category
+               "category." + UtilityMod.MOD_ID + ".main"
         ));
 
         // 3. Register a Client Tick Event to check for key presses
