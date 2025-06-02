@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.10-SNAPSHOT'
+	id 'fabric-loom' version '1.10-SNAPSHOT' // Consider using a stable Loom version if SNAPSHOT causes issues
 	id 'maven-publish'
 }
 
@@ -22,7 +22,7 @@ loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"modid" {
+		"snowstormxd_utility_mod" { // <-- CORRECTED MOD ID HERE
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
 		}
@@ -37,6 +37,7 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
+	// ENSURE 'project.fabric_version' in gradle.properties is a VALID Fabric API version for your Minecraft version!
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 	
 }
