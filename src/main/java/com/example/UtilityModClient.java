@@ -226,20 +226,18 @@ private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
                                        surfacePos.getY() - cameraPos.y + 1.0, // +1 to draw on top of the block
                                        surfacePos.getZ() - cameraPos.z);
 
-                    // Draw a quad on top of the block
-                    // The quad should be slightly elevated (e.g., 0.005f) to avoid z-fighting if drawing directly on surface.
-                    // Here, by translating Y by +1, we are effectively drawing at the 'currentPos' Y level.
-                    // A small offset can still be useful for flat overlays.
                     float offset = 0.005f; // Small offset to prevent z-fighting
 
-                    bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-                    Matrix4f matrix = matrices.peek().getPositionMatrix();
+                    // Get the position matrix from the MatrixStack
+                    Matrix4f matrix = matrices.peek().getPositionMatrix(); // <--- ADD THIS LINE (or uncomment if it was there)
 
-                    // Vertices for a quad on the XZ plane
-                    bufferBuilder.vertex(matrix, 0, offset, 0).color(color).next();
-                    bufferBuilder.vertex(matrix, 0, offset, 1).color(color).next();
-                    bufferBuilder.vertex(matrix, 1, offset, 1).color(color).next();
-                    bufferBuilder.vertex(matrix, 1, offset, 0).color(color).next();
+                    bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+
+                    // Vertices for a quad on the XZ plane, now using the matrix
+                    bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f).color(color).next(); // Apply matrix
+                    bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f).color(color).next(); // Apply matrix
+                    bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f).color(color).next(); // Apply matrix
+                    bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f).color(color).next(); // Apply matrix
                     
                     tessellator.draw();
 
