@@ -79,9 +79,6 @@ public class UtilityModClient implements ClientModInitializer {
     private static final int SCAN_RADIUS_HORIZONTAL = 8;  // Scan 8 blocks in X and Z directions from player
     private static final int SCAN_RADIUS_VERTICAL = 4;    // Scan 4 blocks up and down from player's current Y level
 
-    @Override
-    // Inside UtilityModClient.java
-
 @Override
 public void onInitializeClient() {
     LOGGER.info("Initializing client-side features for " + UtilityMod.MOD_ID); //
