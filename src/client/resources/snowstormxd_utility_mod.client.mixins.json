@@ -1,9 +1,9 @@
 {
 	"required": true,
-	"package": "com.example.mixin.client",
+	"package": "com.snowstormxd_utility_mod.mixin.client",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
-		"ExampleClientMixin"
+		"snowstormxd_utility_modClient.mixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
