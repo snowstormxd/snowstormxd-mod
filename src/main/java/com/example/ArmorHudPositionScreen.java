@@ -48,13 +48,13 @@ public class ArmorHudPositionScreen extends Screen {
 
         PlayerEntity player = MinecraftClient.getInstance().player;
         // For preview, always show 4 slots. If player is null, pass empty list.
-        List<ItemStack> previewArmorItems = new ArrayList<>();
-        if (player != null) {
-            for (ItemStack stack : player.getInventory().armor) {
-                previewArmorItems.add(stack);
-            }
-            Collections.reverse(previewArmorItems); // Helmet first
-        } else {
+    List<ItemStack> previewArmorItems = new ArrayList<>();
+    if (player != null) { // player is MinecraftClient.getInstance().player;
+        for (ItemStack stack : player.getInventory().getArmorStacks()) { // Corrected line
+            previewArmorItems.add(stack);
+        }
+        Collections.reverse(previewArmorItems); // Helmet first
+    } else { // ... }
             // If no player, fill with 4 empty ItemStacks for structure
             for (int i = 0; i < 4; i++) {
                 previewArmorItems.add(ItemStack.EMPTY);
