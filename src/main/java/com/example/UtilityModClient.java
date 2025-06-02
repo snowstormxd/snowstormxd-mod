@@ -57,6 +57,29 @@ public class UtilityModClient implements ClientModInitializer {
     private static KeyBinding positionHudKeyBinding;
 
     private static File configFile;
+    // Inside UtilityModClient class, near other class variables:
+
+    // Toggle state for the new overlay
+    public static boolean showMobSpawnHighlightOverlay = false;
+
+    // Keybinding for the new feature
+    private static KeyBinding mobSpawnHighlightKeyBinding;
+
+    // --- Configuration for Mob Spawn Highlighting ---
+
+    // Light level thresholds for coloring
+    // Mobs generally spawn at block light level 0.
+    private static final int LIGHT_LEVEL_RED_MAX = 0;    // Areas at or below this light level are RED
+    private static final int LIGHT_LEVEL_YELLOW_MAX = 7; // Areas between RED_MAX and this are YELLOW (Green is above this)
+
+    // ARGB colors for the overlays (Alpha, Red, Green, Blue - semi-transparent)
+    private static final int COLOR_RED = 0x70FF0000;    // Semi-transparent Red
+    private static final int COLOR_YELLOW = 0x70FFFF00; // Semi-transparent Yellow
+    private static final int COLOR_GREEN = 0x7000FF00;  // Semi-transparent Green
+
+    // Scan radius around the player
+    private static final int SCAN_RADIUS_HORIZONTAL = 8;  // Scan 8 blocks in X and Z directions from player
+    private static final int SCAN_RADIUS_VERTICAL = 4;    // Scan 4 blocks up and down from player's current Y level
 
     @Override
     // Inside UtilityModClient.java
@@ -146,6 +169,87 @@ public void onInitializeClient() {
             saveConfig(); // Create config with defaults if it doesn't exist
         }
     }
+
+    // Inside UtilityModClient.java
+
+private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
+    MinecraftClient client = MinecraftClient.getInstance();
+    PlayerEntity player = client.player;
+    ClientWorld world = client.world;
+
+    if (player == null || world == null) {
+        return;
+    }
+
+    Vec3d cameraPos = context.camera().getPos();
+    MatrixStack matrices = context.matrixStack(); // Get MatrixStack from render context
+
+    RenderSystem.enableBlend();
+    RenderSystem.defaultBlendFunc();
+    RenderSystem.setShader(GameRenderer::getPositionColorProgram); // Use a simple position-color shader
+
+    Tessellator tessellator = Tessellator.getInstance();
+    BufferBuilder bufferBuilder = tessellator.getBuffer();
+
+    BlockPos.Mutable mutablePos = new BlockPos.Mutable();
+    BlockPos playerPos = player.getBlockPos();
+
+    for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
+        for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
+            for (int y = playerPos.getY() - SCAN_RADIUS_VERTICAL; y <= playerPos.getY() + SCAN_RADIUS_VERTICAL; y++) {
+                mutablePos.set(x, y, z);
+                BlockPos currentPos = mutablePos.toImmutable(); // The space where mob feet would be
+                BlockPos surfacePos = currentPos.down(); // The surface the mob would stand on
+
+                BlockState surfaceState = world.getBlockState(surfacePos);
+                BlockState spawnSpaceState = world.getBlockState(currentPos);
+
+                // Check if the surface is solid and the space above is suitable for spawning (e.g., air)
+                // This is a simplified check; more complex checks for specific mob types might be needed for perfect accuracy.
+                if (surfaceState.isSolid() && surfaceState.isFullCube(world, surfacePos) && !spawnSpaceState.isSolid()) {
+                    // Get block light level at the spawn space (where the mob's feet would be)
+                    int blockLight = world.getLightLevel(LightType.BLOCK, currentPos);
+                    // int skyLight = world.getLightLevel(LightType.SKY, currentPos); // Can also consider sky light if needed
+
+                    int color;
+                    if (blockLight <= LIGHT_LEVEL_RED_MAX) {
+                        color = COLOR_RED;
+                    } else if (blockLight <= LIGHT_LEVEL_YELLOW_MAX) {
+                        color = COLOR_YELLOW;
+                    } else {
+                        color = COLOR_GREEN;
+                    }
+
+                    // Prepare to draw on the top face of surfacePos
+                    matrices.push();
+                    matrices.translate(surfacePos.getX() - cameraPos.x,
+                                       surfacePos.getY() - cameraPos.y + 1.0, // +1 to draw on top of the block
+                                       surfacePos.getZ() - cameraPos.z);
+
+                    // Draw a quad on top of the block
+                    // The quad should be slightly elevated (e.g., 0.005f) to avoid z-fighting if drawing directly on surface.
+                    // Here, by translating Y by +1, we are effectively drawing at the 'currentPos' Y level.
+                    // A small offset can still be useful for flat overlays.
+                    float offset = 0.005f; // Small offset to prevent z-fighting
+
+                    bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+                    Matrix4f matrix = matrices.peek().getPositionMatrix();
+
+                    // Vertices for a quad on the XZ plane
+                    bufferBuilder.vertex(matrix, 0, offset, 0).color(color).next();
+                    bufferBuilder.vertex(matrix, 0, offset, 1).color(color).next();
+                    bufferBuilder.vertex(matrix, 1, offset, 1).color(color).next();
+                    bufferBuilder.vertex(matrix, 1, offset, 0).color(color).next();
+                    
+                    tessellator.draw();
+
+                    matrices.pop();
+                }
+            }
+        }
+    }
+    RenderSystem.disableBlend();
+}
 
     public static void saveConfig() {
         // Ensure the config directory exists
