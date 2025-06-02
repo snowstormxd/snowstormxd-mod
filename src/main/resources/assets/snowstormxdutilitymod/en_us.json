@@ -1,5 +1,6 @@
 {
   "key.snowstormxd_utility_mod.toggle_light_overlay": "Toggle Light Overlay",
   "key.snowstormxd_utility_mod.position_armor_hud": "Position Armor HUD",
+  "key.snowstormxd_utility_mod.toggle_mob_spawn_highlight": "Toggle Mob Spawn Highlight", // <-- NEW LINE
   "category.snowstormxd_utility_mod.main": "snowstormxd Utilities"
 }
