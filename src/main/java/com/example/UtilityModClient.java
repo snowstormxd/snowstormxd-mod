@@ -12,7 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Environment(EnvType.CLIENT) // Mark this class as client-only
-public class YourModClient implements ClientModInitializer {
+public class UtilityModClient implements ClientModInitializer
 
     public static final Logger LOGGER = LoggerFactory.getLogger(YourModMainClass.MOD_ID + "-client"); // Specific logger for client
     public static boolean showLightLevelOverlay = false; // State for our overlay
