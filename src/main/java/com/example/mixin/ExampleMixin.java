@@ -1,4 +1,4 @@
-package com.snowstormxd_utility_mod.mixin;
+package com.example.mixin;
 
 import net.minecraft.server.MinecraftServer;
 import org.spongepowered.asm.mixin.Mixin;
