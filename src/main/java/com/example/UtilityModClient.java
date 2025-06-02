@@ -271,8 +271,9 @@ private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
 
     private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
         List<ItemStack> armorItems = new ArrayList<>();
-        for (ItemStack stack : player.getInventory().armor) {
-            armorItems.add(stack);
+        for (ItemStack stack : player.getInventory().getArmorStacks()) { // Use getArmorStacks()
+        armorItems.add(stack);
+    }
         }
         Collections.reverse(armorItems); // Helmet first
 
