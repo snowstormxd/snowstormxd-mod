@@ -1,9 +1,9 @@
 {
 	"required": true,
-	"package": "com.snowstormxd_utility_mod.mixin.client",
+	"package": "com.example.mixin.client", // Should be this
 	"compatibilityLevel": "JAVA_21",
 	"client": [
-		"snowstormxd_utility_modClient.mixin"
+		"ExampleClientMixin" // Corrected to actual class name, assuming the file name was a typo
 	],
 	"injectors": {
 		"defaultRequire": 1
