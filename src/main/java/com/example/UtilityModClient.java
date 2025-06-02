@@ -27,6 +27,22 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.minecraft.world.LightType;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.block.BlockState;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.RenderLayer;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.world.chunk.light.ChunkLightProvider;
+
 @Environment(EnvType.CLIENT)
 public class UtilityModClient implements ClientModInitializer {
 
@@ -43,49 +59,78 @@ public class UtilityModClient implements ClientModInitializer {
     private static File configFile;
 
     @Override
-    public void onInitializeClient() {
-        LOGGER.info("Initializing client-side features for " + UtilityMod.MOD_ID);
+    // Inside UtilityModClient.java
 
-        configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
-        loadConfig();
+@Override
+public void onInitializeClient() {
+    LOGGER.info("Initializing client-side features for " + UtilityMod.MOD_ID); //
+    configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties"); //
+    loadConfig(); //
 
-        lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_L,
-                "category." + UtilityMod.MOD_ID + ".main"
-        ));
+    lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key." + UtilityMod.MOD_ID + ".toggle_light_overlay", //
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_L, //
+            "category." + UtilityMod.MOD_ID + ".main" //
+    ));
 
-        positionHudKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + UtilityMod.MOD_ID + ".position_armor_hud", 
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_K, 
-                "category." + UtilityMod.MOD_ID + ".main"
-        ));
+    positionHudKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key." + UtilityMod.MOD_ID + ".position_armor_hud", //
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_K, //
+            "category." + UtilityMod.MOD_ID + ".main" //
+    ));
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (lightOverlayKeyBinding.wasPressed()) {
-                showLightLevelOverlay = !showLightLevelOverlay;
-                if (showLightLevelOverlay) {
-                    LOGGER.info("Light level overlay ENABLED");
-                } else {
-                    LOGGER.info("Light level overlay DISABLED");
-                }
+    // NEW: Register mob spawn highlight keybinding
+    mobSpawnHighlightKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key." + UtilityMod.MOD_ID + ".toggle_mob_spawn_highlight", // We'll add this to en_us.json
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_0, // The '0' key
+            "category." + UtilityMod.MOD_ID + ".main"
+    ));
+
+    ClientTickEvents.END_CLIENT_TICK.register(client -> {
+        while (lightOverlayKeyBinding.wasPressed()) { //
+            showLightLevelOverlay = !showLightLevelOverlay; //
+            if (showLightLevelOverlay) { //
+                LOGGER.info("Light level overlay ENABLED"); //
+            } else {
+                LOGGER.info("Light level overlay DISABLED"); //
             }
+        }
 
-            while (positionHudKeyBinding.wasPressed()) {
-                client.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD"))); //
+        while (positionHudKeyBinding.wasPressed()) { //
+            client.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD"))); //
+        }
+
+        // NEW: Handle mob spawn highlight keybinding
+        while (mobSpawnHighlightKeyBinding.wasPressed()) {
+            showMobSpawnHighlightOverlay = !showMobSpawnHighlightOverlay;
+            if (showMobSpawnHighlightOverlay) {
+                LOGGER.info("Mob Spawn Highlight Overlay ENABLED");
+            } else {
+                LOGGER.info("Mob Spawn Highlight Overlay DISABLED");
             }
-        });
+        }
+    });
 
-        HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
+    HudRenderCallback.EVENT.register((drawContext, tickDelta) -> { //
+        MinecraftClient client = MinecraftClient.getInstance(); //
+        if (client.player != null && client.currentScreen == null) { //
+            renderArmorStatus(drawContext, client.player); //
+        }
+    });
+
+    // NEW: Register world rendering event for mob spawn highlights
+    WorldRenderEvents.END.register(context -> {
+        if (showMobSpawnHighlightOverlay && context.gameRenderer() != null && context.world() != null && context.camera() != null) {
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                renderArmorStatus(drawContext, client.player);
+            if (client.player != null) {
+                renderMobSpawnHighlights(context);
             }
-        });
-    }
-
+        }
+    });
+}
     public static void loadConfig() {
         Properties properties = new Properties();
         if (configFile.exists()) {
