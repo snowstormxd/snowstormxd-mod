@@ -1,8 +1,8 @@
-# Fabric Example Mod
+# snowstormxd Minecraft Quality of Life mod
 
 ## Setup
 
-For setup instructions please see the [fabric documentation page](https://docs.fabricmc.net/develop/getting-started/setting-up-a-development-environment) that relates to the IDE that you are using.
+Download and compile the gradle, then place in the mod folder. Use with fabric mod loader.
 
 ## License
 
