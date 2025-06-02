@@ -1,5 +1,8 @@
 package com.example;
 
+import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix4f;
+
 import net.minecraft.client.MinecraftClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
@@ -168,6 +171,7 @@ public void onInitializeClient() {
     // Inside UtilityModClient.java
 
 private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
+    World world = context.world(); // Use the world from the render context
     MinecraftClient client = MinecraftClient.getInstance();
     PlayerEntity player = client.player;
     ClientWorld world = client.world;
@@ -177,7 +181,7 @@ private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
     }
 
     Vec3d cameraPos = context.camera().getPos();
-    MatrixStack matrices = context.matrixStack(); // Get MatrixStack from render context
+    MatrixStack matrices = context.matrixStack; // Get MatrixStack from render context (it's a field, not a method)
 
     RenderSystem.enableBlend();
     RenderSystem.defaultBlendFunc();
