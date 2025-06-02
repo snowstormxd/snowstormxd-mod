@@ -30,7 +30,6 @@ import java.util.Properties;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.world.LightType;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.render.VertexConsumer;
@@ -41,7 +40,6 @@ import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.RenderLayer;
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.world.chunk.light.ChunkLightProvider;
 
 @Environment(EnvType.CLIENT)
 public class UtilityModClient implements ClientModInitializer {
