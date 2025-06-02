@@ -88,45 +88,58 @@ public class UtilityModClient implements ClientModInitializer {
     }
 
     // Modified to use armorHudX and armorHudY
+    // Renders the Armor HUD with percentage durability above each item
     private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
         List<ItemStack> armorItems = new ArrayList<>();
         for (ItemStack stack : player.getInventory().armor) {
             armorItems.add(stack);
         }
-        Collections.reverse(armorItems);
+        Collections.reverse(armorItems); // Helmet first
 
-        // --- MODIFIED: Use dynamic X and Y positions ---
         int currentX = armorHudX;
         int currentY = armorHudY;
-        // --- END MODIFIED ---
-        int spacing = 20;
+        
+        int iconHeight = 16;
+        int textHeight = MinecraftClient.getInstance().textRenderer.fontHeight; // Usually 8px
+        int paddingBelowText = 2; // Space between percentage text and icon
+        int spacingBetweenItems = 4; // Vertical space between full item blocks (text + icon)
 
         for (ItemStack itemStack : armorItems) {
             if (!itemStack.isEmpty()) {
-                // --- MODIFIED: Use currentX and currentY ---
-                drawContext.drawItem(itemStack, currentX, currentY);
-                // --- END MODIFIED ---
-
-                if (itemStack.isDamageable()) {
+                String durabilityText = "";
+                if (itemStack.isDamageable() && itemStack.getMaxDamage() > 0) {
                     int maxDamage = itemStack.getMaxDamage();
                     int currentDamage = itemStack.getDamage();
                     int remainingDurability = maxDamage - currentDamage;
-                    String durabilityText = remainingDurability + "/" + maxDamage;
+                    double percentage = ((double) remainingDurability / maxDamage) * 100.0;
+                    durabilityText = String.format("%.0f%%", percentage); // Format as whole number percentage
+                } else if (itemStack.isDamageable()) { // Max damage is 0 but damageable (unlikely but handle)
+                    durabilityText = "100%";
+                }
+                // For non-damageable items, durabilityText remains empty, or you can add placeholder
 
-                    // --- MODIFIED: Adjust textX based on currentX ---
-                    int textX = currentX + 18;
-                    int textY = currentY + (16 - MinecraftClient.getInstance().textRenderer.fontHeight) / 2 + 1;
-                    // --- END MODIFIED ---
+                // Calculate X position for centered text above the icon
+                int textWidth = MinecraftClient.getInstance().textRenderer.getWidth(durabilityText);
+                int textX = currentX + (iconHeight - textWidth) / 2; // Center text over the 16px icon
 
+                // Draw durability text
+                if (!durabilityText.isEmpty()) {
                     drawContext.drawTextWithShadow(
                         MinecraftClient.getInstance().textRenderer,
                         Text.literal(durabilityText),
                         textX,
-                        textY,
-                        0xFFFFFF
+                        currentY, // Text at the top of the current item's block
+                        0xFFFFFF // White
                     );
                 }
-                // --- MODIFIED: Increment currentY for next item ---
-                currentY += spacing;
-                // --- END MODIFIED ---
+
+                // Draw the armor item icon below the text
+                int iconY = currentY + (!durabilityText.isEmpty() ? textHeight + paddingBelowText : 0);
+                drawContext.drawItem(itemStack, currentX, iconY);
+
+                // Move Y position down for the next item block
+                // Total height for this item: text (if any) + padding + icon + spacing for next
+                currentY += (!durabilityText.isEmpty() ? textHeight + paddingBelowText : 0) + iconHeight + spacingBetweenItems;
             }
+        }
+    }
