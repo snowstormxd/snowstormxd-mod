@@ -8,7 +8,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen; // Required for new screen
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
@@ -18,14 +18,14 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File; // NEW IMPORT
-import java.io.FileReader; // NEW IMPORT
-import java.io.FileWriter; // NEW IMPORT
-import java.io.IOException; // NEW IMPORT
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Properties; // NEW IMPORT
+import java.util.Properties;
 
 @Environment(EnvType.CLIENT)
 public class UtilityModClient implements ClientModInitializer {
@@ -33,25 +33,21 @@ public class UtilityModClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(UtilityMod.MOD_ID + "_client");
     public static boolean showLightLevelOverlay = false;
 
+    // Default position (e.g., top-left corner)
     public static int armorHudX = 10;
     public static int armorHudY = 10;
 
     private static KeyBinding lightOverlayKeyBinding;
     private static KeyBinding positionHudKeyBinding;
 
-    // --- NEW: Config file ---
     private static File configFile;
-    // --- END NEW ---
-
 
     @Override
     public void onInitializeClient() {
         LOGGER.info("Initializing client-side features for " + UtilityMod.MOD_ID);
 
-        // --- NEW: Initialize and load config ---
         configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
         loadConfig();
-        // --- END NEW ---
 
         lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
@@ -61,9 +57,9 @@ public class UtilityModClient implements ClientModInitializer {
         ));
 
         positionHudKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + UtilityMod.MOD_ID + ".position_armor_hud",
+                "key." + UtilityMod.MOD_ID + ".position_armor_hud", 
                 InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_K,
+                GLFW.GLFW_KEY_K, 
                 "category." + UtilityMod.MOD_ID + ".main"
         ));
 
@@ -90,7 +86,6 @@ public class UtilityModClient implements ClientModInitializer {
         });
     }
 
-    // --- NEW: Load config method ---
     public static void loadConfig() {
         Properties properties = new Properties();
         if (configFile.exists()) {
@@ -103,14 +98,20 @@ public class UtilityModClient implements ClientModInitializer {
                 LOGGER.error("Failed to load config for " + UtilityMod.MOD_ID + ", using defaults.", e);
             }
         } else {
-            // If config doesn't exist, save defaults (which also creates the file)
-            saveConfig();
+            saveConfig(); // Create config with defaults if it doesn't exist
         }
     }
-    // --- END NEW ---
 
-    // --- NEW: Save config method ---
     public static void saveConfig() {
+        // Ensure the config directory exists
+        File configDir = configFile.getParentFile();
+        if (!configDir.exists()) {
+            if (!configDir.mkdirs()) {
+                LOGGER.error("Could not create config directory: " + configDir.getAbsolutePath());
+                return;
+            }
+        }
+        
         Properties properties = new Properties();
         properties.setProperty("armorHudX", String.valueOf(armorHudX));
         properties.setProperty("armorHudY", String.valueOf(armorHudY));
@@ -122,7 +123,6 @@ public class UtilityModClient implements ClientModInitializer {
             LOGGER.error("Failed to save config for " + UtilityMod.MOD_ID, e);
         }
     }
-    // --- END NEW ---
 
     private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
         List<ItemStack> armorItems = new ArrayList<>();
@@ -131,44 +131,88 @@ public class UtilityModClient implements ClientModInitializer {
         }
         Collections.reverse(armorItems); // Helmet first
 
-        int currentX = armorHudX; //
-        int currentY = armorHudY; //
-        
-        int iconHeight = 16; //
-        int textHeight = MinecraftClient.getInstance().textRenderer.fontHeight; // Usually 8px
-        int paddingBelowText = 2; // Space between percentage text and icon
-        int spacingBetweenItems = 4; // Vertical space between full item blocks (text + icon)
+        HudElementsRenderer.renderArmorDisplay(drawContext, armorItems, armorHudX, armorHudY, false);
+    }
 
-        for (ItemStack itemStack : armorItems) {
-            if (!itemStack.isEmpty()) { //
+    public static class HudElementsRenderer {
+        public static final int ICON_SIZE = 16;
+        public static final int PADDING_BELOW_TEXT = 2;
+        public static final int SPACING_BETWEEN_ITEMS = 4;
+        // Calculated height for a single item block (text + padding + icon + spacing)
+        // This is used by ArmorHudPositionScreen for its bounding box.
+        public static final int HUD_ITEM_BLOCK_HEIGHT_CALC = MinecraftClient.getInstance().textRenderer.fontHeight + PADDING_BELOW_TEXT + ICON_SIZE + SPACING_BETWEEN_ITEMS;
+
+
+        public static void renderArmorDisplay(DrawContext drawContext, List<ItemStack> armorItemsInput, int x, int y, boolean isPreview) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            int currentX = x;
+            int currentY = y;
+            int textHeight = client.textRenderer.fontHeight;
+
+            List<ItemStack> itemsToDisplay = new ArrayList<>();
+            if (isPreview) {
+                // For preview, always prepare 4 slots.
+                // Start with actual items, then fill with EMPTY.
+                for(ItemStack stack : armorItemsInput) {
+                    itemsToDisplay.add(stack);
+                }
+                while (itemsToDisplay.size() < 4) {
+                    itemsToDisplay.add(ItemStack.EMPTY);
+                }
+                // Ensure only 4 items for preview if more were somehow passed
+                if (itemsToDisplay.size() > 4) {
+                    itemsToDisplay = itemsToDisplay.subList(0, 4);
+                }
+            } else {
+                // For actual HUD, only show non-empty items from input.
+                for (ItemStack stack : armorItemsInput) {
+                    if (!stack.isEmpty()) {
+                        itemsToDisplay.add(stack);
+                    }
+                }
+            }
+            
+            // Note: The input `armorItemsInput` for renderArmorStatus is already reversed.
+            // If `armorItemsInput` for preview wasn't reversed before calling, it would need it here.
+
+            for (ItemStack itemStack : itemsToDisplay) {
+                // In non-preview mode, we've already filtered for non-empty.
+                // In preview mode, we always process the slot.
                 String durabilityText = "";
-                if (itemStack.isDamageable() && itemStack.getMaxDamage() > 0) { //
-                    int maxDamage = itemStack.getMaxDamage(); //
-                    int currentDamage = itemStack.getDamage(); //
-                    int remainingDurability = maxDamage - currentDamage; //
-                    double percentage = ((double) remainingDurability / maxDamage) * 100.0; //
-                    durabilityText = String.format("%.0f%%", percentage); // Format as whole number percentage
-                } else if (itemStack.isDamageable()) { // Max damage is 0 but damageable (unlikely but handle)
-                    durabilityText = "100%"; //
+                if (!itemStack.isEmpty() && itemStack.isDamageable() && itemStack.getMaxDamage() > 0) {
+                    int maxDamage = itemStack.getMaxDamage();
+                    int currentDamage = itemStack.getDamage();
+                    int remainingDurability = maxDamage - currentDamage;
+                    double percentage = ((double) remainingDurability / maxDamage) * 100.0;
+                    durabilityText = String.format("%.0f%%", percentage);
+                } else if (!itemStack.isEmpty() && itemStack.isDamageable()) { // Should have maxDamage > 0, but good fallback
+                    durabilityText = "100%";
+                } else if (isPreview && itemStack.isEmpty()) {
+                    durabilityText = "Slot"; 
                 }
 
-                int textWidth = MinecraftClient.getInstance().textRenderer.getWidth(durabilityText); //
-                int textX = currentX + (iconHeight - textWidth) / 2; // Center text over the 16px icon
+                int textWidth = client.textRenderer.getWidth(durabilityText);
+                int textX = currentX + (ICON_SIZE - textWidth) / 2;
 
                 if (!durabilityText.isEmpty()) {
-                    drawContext.drawTextWithShadow( //
-                        MinecraftClient.getInstance().textRenderer, //
-                        Text.literal(durabilityText), //
-                        textX, //
-                        currentY, // Text at the top of the current item's block
-                        0xFFFFFF // White
+                    drawContext.drawTextWithShadow(
+                        client.textRenderer,
+                        Text.literal(durabilityText),
+                        textX,
+                        currentY,
+                        (isPreview && itemStack.isEmpty()) ? 0xAAAAAA : 0xFFFFFF
                     );
                 }
 
-                int iconY = currentY + (!durabilityText.isEmpty() ? textHeight + paddingBelowText : 0); //
-                drawContext.drawItem(itemStack, currentX, iconY); //
+                int iconY = currentY + (!durabilityText.isEmpty() ? textHeight + PADDING_BELOW_TEXT : 0);
+                
+                if (!itemStack.isEmpty()) {
+                    drawContext.drawItem(itemStack, currentX, iconY);
+                } else if (isPreview) {
+                    drawContext.fill(currentX, iconY, currentX + ICON_SIZE, iconY + ICON_SIZE, 0x50808080);
+                }
 
-                currentY += (!durabilityText.isEmpty() ? textHeight + paddingBelowText : 0) + iconHeight + spacingBetweenItems; //
+                currentY += (!durabilityText.isEmpty() ? textHeight + PADDING_BELOW_TEXT : 0) + ICON_SIZE + SPACING_BETWEEN_ITEMS;
             }
         }
     }
