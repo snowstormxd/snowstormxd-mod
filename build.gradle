@@ -15,15 +15,8 @@ base {
 }
 
 repositories {
-    // Loom typically adds the necessary repositories (like Fabric's Maven and Maven Central) automatically.
-    // However, if you were using other mods as dependencies or specific snapshot versions
-    // not covered by Loom, you might add them here.
-    // For example:
-    // mavenCentral() // For general dependencies
-    // maven { url = uri("https://maven.fabricmc.net/") } // Fabric's main repository
-    // maven { url = uri("https://maven.fabricmc.net/repository/snapshot/") } // For SNAPSHOT versions if needed
-
-    // For most common cases, leaving this empty and letting Loom handle it is fine.
+    mavenCentral()
+    maven { url = uri("https://maven.fabricmc.net/") }
 }
 
 loom {
