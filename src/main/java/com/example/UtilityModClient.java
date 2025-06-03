@@ -174,7 +174,6 @@ private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
     World world = context.world(); // Use the world from the render context
     MinecraftClient client = MinecraftClient.getInstance();
     PlayerEntity player = client.player;
-    ClientWorld world = client.world;
 
     if (player == null || world == null) {
         return;
