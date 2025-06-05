@@ -4,7 +4,8 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext; // Added
-import net.minecraft.client.render.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 
 import net.minecraft.client.MinecraftClient;
 import net.fabricmc.api.ClientModInitializer;
