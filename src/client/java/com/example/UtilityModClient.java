@@ -1,5 +1,7 @@
 package com.example;
 
+import com.mojang.blaze3d.opengl.GlStateManager;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -14,13 +16,11 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormats;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.platform.GlStateManager;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -194,93 +194,92 @@ public class UtilityModClient implements ClientModInitializer {
     // ─── MOB-SPAWN HIGHLIGHT RENDERING ──────────────────────────────────────────────
 
     private void renderMobSpawnHighlights(WorldRenderContext context) {
-        var world = context.world();
-        MinecraftClient client = MinecraftClient.getInstance();
-        PlayerEntity player = client.player;
-        if (player == null || world == null) return;
+    var world = context.world();
+    MinecraftClient client = MinecraftClient.getInstance();
+    PlayerEntity player = client.player;
+    if (player == null || world == null) return;
 
-        Vec3d cameraPos = context.camera().getPos();
-        var matrices = context.matrixStack();
+    Vec3d cameraPos = context.camera().getPos();
+    var matrices = context.matrixStack();
 
-        // Enable blending with standard alpha mode
-        GlStateManager.enableBlend();
-        GlStateManager.blendFunc(
-            GlStateManager.SrcFactor.SRC_ALPHA,
-            GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
+    // — Use RenderSystem.enableBlend() (still valid in 1.21.5)
+    RenderSystem.enableBlend();
+    // Set the blend function directly via GlStateManager:
+    GlStateManager.blendFunc(
+        GlStateManager.SrcFactor.SRC_ALPHA,
+        GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
+    );
 
-        // We no longer use Tessellator.getBuffer(); instead:
-        BufferBuilder bufferBuilder = new BufferBuilder(256);
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+    BlockPos.Mutable mutablePos = new BlockPos.Mutable();
+    BlockPos playerPos = player.getBlockPos();
 
-        BlockPos.Mutable mutablePos = new BlockPos.Mutable();
-        BlockPos playerPos = player.getBlockPos();
+    for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
+        for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
+            for (int y = playerPos.getY() - SCAN_RADIUS_VERTICAL; y <= playerPos.getY() + SCAN_RADIUS_VERTICAL; y++) {
+                mutablePos.set(x, y, z);
+                BlockPos surfacePos = mutablePos.down();
 
-        for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
-            for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
-                for (int y = playerPos.getY() - SCAN_RADIUS_VERTICAL; y <= playerPos.getY() + SCAN_RADIUS_VERTICAL; y++) {
-                    mutablePos.set(x, y, z);
-                    BlockPos surfacePos = mutablePos.down();
+                BlockState surfaceState = world.getBlockState(surfacePos);
+                BlockState spawnSpaceState = world.getBlockState(mutablePos);
 
-                    BlockState surfaceState = world.getBlockState(surfacePos);
-                    BlockState spawnSpaceState = world.getBlockState(mutablePos);
+                if (surfaceState.isSolid() &&
+                    surfaceState.isFullCube(world, surfacePos) &&
+                    !spawnSpaceState.isSolid()) {
 
-                    if (surfaceState.isSolid() &&
-                        surfaceState.isFullCube(world, surfacePos) &&
-                        !spawnSpaceState.isSolid()) {
-
-                        int blockLight = world.getLightLevel(LightType.BLOCK, mutablePos);
-                        int color;
-                        if (blockLight <= LIGHT_LEVEL_RED_MAX) {
-                            color = COLOR_RED;
-                        } else if (blockLight <= LIGHT_LEVEL_YELLOW_MAX) {
-                            color = COLOR_YELLOW;
-                        } else {
-                            color = COLOR_GREEN;
-                        }
-
-                        matrices.push();
-                        matrices.translate(
-                            surfacePos.getX() - cameraPos.x,
-                            surfacePos.getY() - cameraPos.y + 1.0,
-                            surfacePos.getZ() - cameraPos.z
-                        );
-
-                        // Slight offset so the quad does not Z-fight the block below
-                        float offset = 0.005f;
-                        var matrix = matrices.peek().getPositionMatrix();
-
-                        // Decompose ARGB into separate components
-                        int alpha = (color >> 24) & 0xFF;
-                        int red   = (color >> 16) & 0xFF;
-                        int green = (color >> 8)  & 0xFF;
-                        int blue  =  color        & 0xFF;
-
-                        bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-                        bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f)
-                                     .color(red, green, blue, alpha)
-                                     .next();
-                        bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f)
-                                     .color(red, green, blue, alpha)
-                                     .next();
-                        bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f)
-                                     .color(red, green, blue, alpha)
-                                     .next();
-                        bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f)
-                                     .color(red, green, blue, alpha)
-                                     .next();
-
-                        bufferBuilder.end();
-                        BufferRenderer.draw(bufferBuilder);
-
-                        matrices.pop();
+                    int blockLight = world.getLightLevel(LightType.BLOCK, mutablePos);
+                    int color;
+                    if (blockLight <= LIGHT_LEVEL_RED_MAX) {
+                        color = COLOR_RED;
+                    } else if (blockLight <= LIGHT_LEVEL_YELLOW_MAX) {
+                        color = COLOR_YELLOW;
+                    } else {
+                        color = COLOR_GREEN;
                     }
+
+                    matrices.push();
+                    matrices.translate(
+                        surfacePos.getX() - cameraPos.x,
+                        surfacePos.getY() - cameraPos.y + 1.0,
+                        surfacePos.getZ() - cameraPos.z
+                    );
+
+                    float offset = 0.005f;
+                    var matrix = matrices.peek().getPositionMatrix();
+
+                    // — NEW: Use Tessellator’s buffer + draw() rather than BufferRenderer
+                    Tessellator tessellator = Tessellator.getInstance();
+                    BufferBuilder bufferBuilder = tessellator.getBuffer();
+                    RenderSystem.setShader(GameRenderer::getPositionColorShader);
+                    bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+
+                    int alpha = (color >> 24) & 0xFF;
+                    int red   = (color >> 16) & 0xFF;
+                    int green = (color >> 8)  & 0xFF;
+                    int blue  =  color        & 0xFF;
+
+                    bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f)
+                                 .color(red, green, blue, alpha)
+                                 .next();
+                    bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f)
+                                 .color(red, green, blue, alpha)
+                                 .next();
+                    bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f)
+                                 .color(red, green, blue, alpha)
+                                 .next();
+                    bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f)
+                                 .color(red, green, blue, alpha)
+                                 .next();
+
+                    tessellator.draw();
+
+                    GlStateManager.disableBlend();
+                    matrices.pop();
                 }
             }
         }
-
-        GlStateManager.disableBlend();
     }
+}
+
 
     // ─── ARMOR HUD RENDERING ────────────────────────────────────────────────────────
 
