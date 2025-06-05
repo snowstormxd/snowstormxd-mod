@@ -4,8 +4,15 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext; // Added
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.platform.GlStateManager;
+
+import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.VertexFormat;            // from com.mojang.blaze3d.vertex.VertexFormat 
+import com.mojang.blaze3d.vertex.VertexFormat.DrawMode;   // for DrawMode.QUADS
 
 import net.minecraft.client.MinecraftClient;
 import net.fabricmc.api.ClientModInitializer;
@@ -185,66 +192,59 @@ public void onInitializeClient() {
         Vec3d cameraPos = context.camera().getPos();
         MatrixStack matrices = context.matrixStack(); // Correct: matrixStack() is a method
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        // Turn on blending (so our semi-transparent quads will draw properly)
+        GlStateManager.enableBlend();
+        // Use “SRC_ALPHA, ONE_MINUS_SRC_ALPHA” (the usual “alpha” blend)
+        GlStateManager.blendFunc(GlStateManager.SrcFactor.SRC_ALPHA,
+                        GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA);
+
         // RenderSystem.setShader(GameRenderer::getPositionColorProgram); // This is fine
 
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder bufferBuilder = tessellator.getBuffer();
+        // 1) Create a fresh BufferBuilder (256 is a typical buffer size; you can keep it at 256)
+        BufferBuilder bufferBuilder = new BufferBuilder(256);
 
-        BlockPos.Mutable mutablePos = new BlockPos.Mutable();
-        BlockPos playerPos = player.getBlockPos();
+        // 2) Tell Minecraft which shader to use for “position + color” drawing:
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
-        for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
-            for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
-                for (int y = playerPos.getY() - SCAN_RADIUS_VERTICAL; y <= playerPos.getY() + SCAN_RADIUS_VERTICAL; y++) {
-                    mutablePos.set(x, y, z);
-                    BlockPos currentPos = mutablePos.toImmutable();
-                    BlockPos surfacePos = currentPos.down();
+        // 3) Begin building a QUADS buffer, using the built-in POSITION_COLOR format:
+        bufferBuilder.begin(DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
-                    BlockState surfaceState = world.getBlockState(surfacePos);
-                    BlockState spawnSpaceState = world.getBlockState(currentPos);
+        // 4) Add all four corners of your quad (just like before). However, the “.next()” method
+        //    no longer exists. Instead, each vertex is ended by calling .next() implicitly via 
+        //    the chain, but we have to supply RGBA components (0–255) instead of a single ARGB int.
+        //    So, we break `int color` (ARGB) into four bytes: alpha, red, green, blue.
 
-                    if (surfaceState.isSolid() && surfaceState.isFullCube(world, surfacePos) && !spawnSpaceState.isSolid()) {
-                        int blockLight = world.getLightLevel(LightType.BLOCK, currentPos);
+        int alpha = (color >> 24) & 0xFF;
+        int red   = (color >> 16) & 0xFF;
+        int green = (color >> 8)  & 0xFF;
+        int blue  =  color        & 0xFF;
 
-                        int color;
-                        if (blockLight <= LIGHT_LEVEL_RED_MAX) {
-                            color = COLOR_RED;
-                        } else if (blockLight <= LIGHT_LEVEL_YELLOW_MAX) {
-                            color = COLOR_YELLOW;
-                        } else {
-                            // It's good practice to have a default/else case, though your logic covers it.
-                            // For clarity, let's assume it implies green here if not red or yellow.
-                            // If green is not desired for higher light levels, this logic might need adjustment.
-                            color = COLOR_GREEN; // Assuming this is the intended fallback
-                        }
+        // Now add each vertex. (Note: bufferBuilder.vertex(...) returns a VertexConsumer that we can chain.)
+        bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f)
+                     .color(red, green, blue, alpha)
+                     .next();  // In 1.21.5 this compiles exactly as “.next()” (not “.endVertex()”)
 
-                        matrices.push();
-                        matrices.translate(surfacePos.getX() - cameraPos.x,
-                                           surfacePos.getY() - cameraPos.y + 1.0,
-                                           surfacePos.getZ() - cameraPos.z);
+        // Repeat for the other three corners:
+        bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f)
+                     .color(red, green, blue, alpha)
+                     .next();
+        bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f)
+                     .color(red, green, blue, alpha)
+                     .next();
+        bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f)
+                     .color(red, green, blue, alpha)
+                     .next();
 
-                        float offset = 0.005f;
-                        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        // 5) Finish building the buffer and tell Minecraft to draw it:
+        bufferBuilder.end();
+        BufferRenderer.draw(bufferBuilder);
 
-                        // Ensure VertexFormat.DrawMode is correctly referenced.
-                        // If 'VertexFormat' class itself is not found, the import is the issue.
-                        // If the import is correct, then VertexFormat.DrawMode.QUADS should be fine.
-                        bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-
-                        bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f).color(color).next();
-                        bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f).color(color).next();
-                        bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f).color(color).next();
-                        bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f).color(color).next();
-                        
-                        tessellator.draw();
                         matrices.pop();
                     }
                 }
             }
         }
-        RenderSystem.disableBlend();
+        GlStateManager.disableBlend();
     }
 
     public static void saveConfig() {
@@ -271,11 +271,12 @@ public void onInitializeClient() {
 
     private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
         List<ItemStack> armorItems = new ArrayList<>();
-        for (ItemStack stack : player.getInventory().getArmorStacks()) { // Use getArmorStacks()
+        // In 1.21.5, use getArmorStack(i) for i = 0..3
+        for (int slot = 0; slot < 4; slot++) {
+            ItemStack stack = player.getInventory().getArmorStack(slot);
             armorItems.add(stack);
-        } // Closes for-loop
-
-        Collections.reverse(armorItems); // Helmet first
+        }
+        Collections.reverse(armorItems); // so helmet is first
         HudElementsRenderer.renderArmorDisplay(drawContext, armorItems, armorHudX, armorHudY, false);
 
     }
