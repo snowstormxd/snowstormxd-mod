@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
@@ -17,7 +18,7 @@ public class ArmorHudPositionScreen extends Screen {
     private boolean isDragging = false;
     private double dragStartX, dragStartY;
 
-    // Match what HudElementsRenderer expects
+    // Must match the same constants in HudElementsRenderer
     private static final int PREVIEW_ICON_SIZE = UtilityModClient.HudElementsRenderer.ICON_SIZE;
     private static final int HUD_PREVIEW_WIDTH = PREVIEW_ICON_SIZE + 30;
     private static final int HUD_PREVIEW_ITEM_BLOCK_HEIGHT = UtilityModClient.HudElementsRenderer.HUD_ITEM_BLOCK_HEIGHT_CALC;
@@ -40,7 +41,7 @@ public class ArmorHudPositionScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
-        // Dark translucent background
+        // Draw a dark translucent background
         context.fill(0, 0, this.width, this.height, 0x50000000);
         Text instructions = Text.literal("Click and drag the Armor HUD to reposition. Press 'Done' or ESC to save.");
         context.drawTextWithShadow(
@@ -55,21 +56,22 @@ public class ArmorHudPositionScreen extends Screen {
         List<ItemStack> previewArmorItems = new ArrayList<>();
 
         if (player != null) {
-            // Grab the four armor slots from the inventory's armor list
-            var inventory = player.getInventory();
-            for (int slot = 0; slot < 4; slot++) {
-                ItemStack stack = inventory.armor.get(slot);
+            // Read each armor piece via EquipmentSlot
+            for (EquipmentSlot slot : new EquipmentSlot[]{
+                    EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD
+            }) {
+                ItemStack stack = player.getEquippedStack(slot);
                 previewArmorItems.add(stack);
             }
             Collections.reverse(previewArmorItems);
         } else {
-            // No player loaded (e.g. main menu) → show four empty slots
+            // No player (e.g. in main menu): show 4 empty slots
             for (int i = 0; i < 4; i++) {
                 previewArmorItems.add(ItemStack.EMPTY);
             }
         }
 
-        // Ensure exactly 4 slots
+        // Ensure exactly 4 elements
         while (previewArmorItems.size() < 4) {
             previewArmorItems.add(ItemStack.EMPTY);
         }
