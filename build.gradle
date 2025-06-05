@@ -1,7 +1,4 @@
 plugins {
-    // Using a SNAPSHOT version of Loom can sometimes lead to instability.
-    // If you encounter persistent issues after correcting fabric_version,
-    // consider switching to a stable Loom version (e.g., '1.6.13' or check Fabric docs for latest stable for MC 1.21.5).
     id 'fabric-loom' version '1.10-SNAPSHOT'
     id 'maven-publish'
 }
@@ -23,8 +20,6 @@ loom {
     splitEnvironmentSourceSets()
 
     mods {
-        // Ensure this mod ID matches the "id" in your fabric.mod.json
-        // Your fabric.mod.json has "id": "snowstormxd_utility_mod", which matches.
         "snowstormxd_utility_mod" {
             sourceSet sourceSets.main
             sourceSet sourceSets.client
