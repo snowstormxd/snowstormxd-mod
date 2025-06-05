@@ -3,6 +3,9 @@ package com.example;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext; // Added
+import net.minecraft.client.render.VertexFormat;
+
 import net.minecraft.client.MinecraftClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
@@ -39,8 +42,6 @@ import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.RenderLayer;
 import com.mojang.blaze3d.systems.RenderSystem;
 
@@ -143,15 +144,15 @@ public void onInitializeClient() {
     });
 
     // NEW: Register world rendering event for mob spawn highlights
-    WorldRenderEvents.END.register(context -> {
-        if (showMobSpawnHighlightOverlay && context.gameRenderer() != null && context.world() != null && context.camera() != null) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null) {
-                renderMobSpawnHighlights(context);
+        WorldRenderEvents.END.register(context -> { // context here is of type WorldRenderContext
+            if (showMobSpawnHighlightOverlay && context.gameRenderer() != null && context.world() != null && context.camera() != null) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.player != null) {
+                    renderMobSpawnHighlights(context); // Pass the context
+                }
             }
-        }
-    });
-}
+        });
+    }
     public static void loadConfig() {
         Properties properties = new Properties();
         if (configFile.exists()) {
@@ -170,82 +171,80 @@ public void onInitializeClient() {
 
     // Inside UtilityModClient.java
 
-private void renderMobSpawnHighlights(WorldRenderEvents.RenderContext context) {
-    World world = context.world(); // Use the world from the render context
-    MinecraftClient client = MinecraftClient.getInstance();
-    PlayerEntity player = client.player;
+// Updated method signature
+    private void renderMobSpawnHighlights(WorldRenderContext context) { // Changed parameter type
+        net.minecraft.world.World world = context.world(); // Correct way to get world
+        MinecraftClient client = MinecraftClient.getInstance();
+        PlayerEntity player = client.player;
 
-    if (player == null || world == null) {
-        return;
-    }
+        if (player == null || world == null) {
+            return;
+        }
 
-    Vec3d cameraPos = context.camera().getPos();
-    MatrixStack matrices = context.matrixStack; // Get MatrixStack from render context (it's a field, not a method)
+        Vec3d cameraPos = context.camera().getPos();
+        MatrixStack matrices = context.matrixStack(); // Correct: matrixStack() is a method
 
-    RenderSystem.enableBlend();
-    RenderSystem.defaultBlendFunc();
-    RenderSystem.setShader(GameRenderer::getPositionColorProgram); // Use a simple position-color shader
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        // RenderSystem.setShader(GameRenderer::getPositionColorProgram); // This is fine
 
-    Tessellator tessellator = Tessellator.getInstance();
-    BufferBuilder bufferBuilder = tessellator.getBuffer();
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder bufferBuilder = tessellator.getBuffer();
 
-    BlockPos.Mutable mutablePos = new BlockPos.Mutable();
-    BlockPos playerPos = player.getBlockPos();
+        BlockPos.Mutable mutablePos = new BlockPos.Mutable();
+        BlockPos playerPos = player.getBlockPos();
 
-    for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
-        for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
-            for (int y = playerPos.getY() - SCAN_RADIUS_VERTICAL; y <= playerPos.getY() + SCAN_RADIUS_VERTICAL; y++) {
-                mutablePos.set(x, y, z);
-                BlockPos currentPos = mutablePos.toImmutable(); // The space where mob feet would be
-                BlockPos surfacePos = currentPos.down(); // The surface the mob would stand on
+        for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
+            for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
+                for (int y = playerPos.getY() - SCAN_RADIUS_VERTICAL; y <= playerPos.getY() + SCAN_RADIUS_VERTICAL; y++) {
+                    mutablePos.set(x, y, z);
+                    BlockPos currentPos = mutablePos.toImmutable();
+                    BlockPos surfacePos = currentPos.down();
 
-                BlockState surfaceState = world.getBlockState(surfacePos);
-                BlockState spawnSpaceState = world.getBlockState(currentPos);
+                    BlockState surfaceState = world.getBlockState(surfacePos);
+                    BlockState spawnSpaceState = world.getBlockState(currentPos);
 
-                // Check if the surface is solid and the space above is suitable for spawning (e.g., air)
-                // This is a simplified check; more complex checks for specific mob types might be needed for perfect accuracy.
-                if (surfaceState.isSolid() && surfaceState.isFullCube(world, surfacePos) && !spawnSpaceState.isSolid()) {
-                    // Get block light level at the spawn space (where the mob's feet would be)
-                    int blockLight = world.getLightLevel(LightType.BLOCK, currentPos);
-                    // int skyLight = world.getLightLevel(LightType.SKY, currentPos); // Can also consider sky light if needed
+                    if (surfaceState.isSolid() && surfaceState.isFullCube(world, surfacePos) && !spawnSpaceState.isSolid()) {
+                        int blockLight = world.getLightLevel(LightType.BLOCK, currentPos);
 
-                    int color;
-                    if (blockLight <= LIGHT_LEVEL_RED_MAX) {
-                        color = COLOR_RED;
-                    } else if (blockLight <= LIGHT_LEVEL_YELLOW_MAX) {
-                        color = COLOR_YELLOW;
-                    } else {
-                        color = COLOR_GREEN;
+                        int color;
+                        if (blockLight <= LIGHT_LEVEL_RED_MAX) {
+                            color = COLOR_RED;
+                        } else if (blockLight <= LIGHT_LEVEL_YELLOW_MAX) {
+                            color = COLOR_YELLOW;
+                        } else {
+                            // It's good practice to have a default/else case, though your logic covers it.
+                            // For clarity, let's assume it implies green here if not red or yellow.
+                            // If green is not desired for higher light levels, this logic might need adjustment.
+                            color = COLOR_GREEN; // Assuming this is the intended fallback
+                        }
+
+                        matrices.push();
+                        matrices.translate(surfacePos.getX() - cameraPos.x,
+                                           surfacePos.getY() - cameraPos.y + 1.0,
+                                           surfacePos.getZ() - cameraPos.z);
+
+                        float offset = 0.005f;
+                        Matrix4f matrix = matrices.peek().getPositionMatrix();
+
+                        // Ensure VertexFormat.DrawMode is correctly referenced.
+                        // If 'VertexFormat' class itself is not found, the import is the issue.
+                        // If the import is correct, then VertexFormat.DrawMode.QUADS should be fine.
+                        bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+
+                        bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f).color(color).next();
+                        bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f).color(color).next();
+                        bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f).color(color).next();
+                        bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f).color(color).next();
+                        
+                        tessellator.draw();
+                        matrices.pop();
                     }
-
-                    // Prepare to draw on the top face of surfacePos
-                    matrices.push();
-                    matrices.translate(surfacePos.getX() - cameraPos.x,
-                                       surfacePos.getY() - cameraPos.y + 1.0, // +1 to draw on top of the block
-                                       surfacePos.getZ() - cameraPos.z);
-
-                    float offset = 0.005f; // Small offset to prevent z-fighting
-
-                    // Get the position matrix from the MatrixStack
-                    Matrix4f matrix = matrices.peek().getPositionMatrix(); // <--- ADD THIS LINE (or uncomment if it was there)
-
-                    bufferBuilder.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-
-                    // Vertices for a quad on the XZ plane, now using the matrix
-                    bufferBuilder.vertex(matrix, 0.0f, offset, 0.0f).color(color).next(); // Apply matrix
-                    bufferBuilder.vertex(matrix, 0.0f, offset, 1.0f).color(color).next(); // Apply matrix
-                    bufferBuilder.vertex(matrix, 1.0f, offset, 1.0f).color(color).next(); // Apply matrix
-                    bufferBuilder.vertex(matrix, 1.0f, offset, 0.0f).color(color).next(); // Apply matrix
-                    
-                    tessellator.draw();
-
-                    matrices.pop();
                 }
             }
         }
+        RenderSystem.disableBlend();
     }
-    RenderSystem.disableBlend();
-}
 
     public static void saveConfig() {
         // Ensure the config directory exists
