@@ -12,20 +12,19 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.util.Identifier;
-import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.LightType;
+import net.minecraft.block.BlockState;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
-import net.minecraft.world.LightType;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.block.BlockState;
+import net.minecraft.client.util.InputUtil;
 
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -61,14 +60,14 @@ public class UtilityModClient implements ClientModInitializer {
 
     // Light‐level thresholds (block light)
     private static final int LIGHT_LEVEL_RED_MAX = 0;    // ≤ 0 → RED
-    private static final int LIGHT_LEVEL_YELLOW_MAX = 7; // 1–7 → YELLOW, >7 → GREEN
+    private static final int LIGHT_LEVEL_YELLOW_MAX = 7; // 1–7 → YELLOW, > 7 → GREEN
 
-    // ARGB colors (semi-transparent)
+    // ARGB colors (semi‐transparent)
     private static final int COLOR_RED = 0x70FF0000;
     private static final int COLOR_YELLOW = 0x70FFFF00;
     private static final int COLOR_GREEN = 0x7000FF00;
 
-    // Scan radius around player
+    // Scan radius around the player
     private static final int SCAN_RADIUS_HORIZONTAL = 8;
     private static final int SCAN_RADIUS_VERTICAL = 4;
 
@@ -80,7 +79,7 @@ public class UtilityModClient implements ClientModInitializer {
         configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
         loadConfig();
 
-        // 2) Register keybindings
+        // 2) Register key bindings
         lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
                 InputUtil.Type.KEYSYM,
@@ -117,17 +116,17 @@ public class UtilityModClient implements ClientModInitializer {
 
         // 4) Draw the Armor HUD on the in‐game HUD
         HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                renderArmorStatus(drawContext, client.player);
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null && mc.currentScreen == null) {
+                renderArmorStatus(drawContext, mc.player);
             }
         });
 
         // 5) Draw the mob spawn highlights at the end of the world‐render pass
         WorldRenderEvents.END.register(context -> {
             if (showMobSpawnHighlightOverlay && context.world() != null && context.camera() != null) {
-                MinecraftClient client = MinecraftClient.getInstance();
-                if (client.player != null) {
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc.player != null) {
                     renderMobSpawnHighlights(context);
                 }
             }
@@ -173,8 +172,8 @@ public class UtilityModClient implements ClientModInitializer {
 
     private void renderMobSpawnHighlights(WorldRenderContext context) {
         var world = context.world();
-        MinecraftClient client = MinecraftClient.getInstance();
-        PlayerEntity player = client.player;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        PlayerEntity player = mc.player;
         if (player == null || world == null) return;
 
         Vec3d cameraPos = context.camera().getPos();
@@ -183,6 +182,11 @@ public class UtilityModClient implements ClientModInitializer {
         // Loop over blocks around the player
         BlockPos playerPos = player.getBlockPos();
         BlockPos.Mutable mutablePos = new BlockPos.Mutable();
+
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder buffer = tess.getBuffer();
+        // Use the POSITION_COLOR shader (no RenderLayer needed)
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         for (int x = playerPos.getX() - SCAN_RADIUS_HORIZONTAL; x <= playerPos.getX() + SCAN_RADIUS_HORIZONTAL; x++) {
             for (int z = playerPos.getZ() - SCAN_RADIUS_HORIZONTAL; z <= playerPos.getZ() + SCAN_RADIUS_HORIZONTAL; z++) {
@@ -198,7 +202,6 @@ public class UtilityModClient implements ClientModInitializer {
                         !spawnSpaceState.isSolid()) {
 
                         int blockLight = world.getLightLevel(LightType.BLOCK, mutablePos);
-
                         int color;
                         if (blockLight <= LIGHT_LEVEL_RED_MAX) {
                             color = COLOR_RED;
@@ -208,7 +211,6 @@ public class UtilityModClient implements ClientModInitializer {
                             color = COLOR_GREEN;
                         }
 
-                        // Push matrix so translation is undone later
                         matrices.push();
                         matrices.translate(
                             surfacePos.getX() - cameraPos.x,
@@ -218,29 +220,31 @@ public class UtilityModClient implements ClientModInitializer {
                         float offset = 0.005f;
                         var matrix = matrices.peek().getPositionMatrix();
 
-                        // Instead of BufferBuilder + Tessellator, use the context's VertexConsumer:
-                        VertexConsumer consumer = context.consumers()
-                            .getBuffer(RenderLayer.getPositionColor());
+                        // Begin building a QUADS buffer with POSITION_COLOR format
+                        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
-                        // Break ARGB into RGBA bytes (0–255)
+                        // Decompose ARGB into RGBA bytes
                         int alpha = (color >> 24) & 0xFF;
                         int red   = (color >> 16) & 0xFF;
                         int green = (color >> 8)  & 0xFF;
                         int blue  =  color        & 0xFF;
 
-                        // Draw a 1×1 quad at (0, offset, 0) in local space
-                        consumer.vertex(matrix, 0.0f, offset, 0.0f)
-                                .color(red, green, blue, alpha)
-                                .next();
-                        consumer.vertex(matrix, 0.0f, offset, 1.0f)
-                                .color(red, green, blue, alpha)
-                                .next();
-                        consumer.vertex(matrix, 1.0f, offset, 1.0f)
-                                .color(red, green, blue, alpha)
-                                .next();
-                        consumer.vertex(matrix, 1.0f, offset, 0.0f)
-                                .color(red, green, blue, alpha)
-                                .next();
+                        // Add each corner of the 1×1 quad:
+                        buffer.vertex(matrix, 0.0f, offset, 0.0f)
+                              .color(red, green, blue, alpha)
+                              .endVertex();
+                        buffer.vertex(matrix, 0.0f, offset, 1.0f)
+                              .color(red, green, blue, alpha)
+                              .endVertex();
+                        buffer.vertex(matrix, 1.0f, offset, 1.0f)
+                              .color(red, green, blue, alpha)
+                              .endVertex();
+                        buffer.vertex(matrix, 1.0f, offset, 0.0f)
+                              .color(red, green, blue, alpha)
+                              .endVertex();
+
+                        // Draw it to the screen
+                        tess.draw();
 
                         matrices.pop();
                     }
@@ -252,16 +256,15 @@ public class UtilityModClient implements ClientModInitializer {
     // ── RENDER ARMOR STATUS HUD ─────────────────────────────────────────────────────
 
     private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
-        // Collect the four armor stacks (boots→helmet) from the inventory list directly
         List<ItemStack> armorItems = new ArrayList<>();
-        // In 1.21.5 Yarn, inventory.armor is a DefaultedList<ItemStack>
-        var inventory = player.getInventory();
-        for (int slot = 0; slot < 4; slot++) {
-            // boots=slot0, leggings=slot1, chest=slot2, helmet=slot3
-            ItemStack stack = inventory.armor.get(slot);
+        // Read each armor piece via EquipmentSlot
+        for (EquipmentSlot slot : new EquipmentSlot[]{
+                EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD
+        }) {
+            ItemStack stack = player.getEquippedStack(slot);
             armorItems.add(stack);
         }
-        Collections.reverse(armorItems); // show helmet first
+        Collections.reverse(armorItems); // helmet first
         HudElementsRenderer.renderArmorDisplay(drawContext, armorItems, armorHudX, armorHudY, false);
     }
 
@@ -278,8 +281,9 @@ public class UtilityModClient implements ClientModInitializer {
             + SPACING_BETWEEN_ITEMS;
 
         /**
-         * Renders an armor HUD (4‐slot vertical) at (x,y). If isPreview==true,
-         * always draw exactly 4 slots (possibly empty). Otherwise, only non‐empty.
+         * Renders a vertical, 4‐slot armor HUD at (x, y).
+         * If isPreview is true, always show exactly 4 slots (possibly empty).
+         * Otherwise, only non‐empty armor pieces are displayed.
          */
         public static void renderArmorDisplay(
                 DrawContext drawContext,
@@ -292,10 +296,9 @@ public class UtilityModClient implements ClientModInitializer {
             int currentY = y;
             int textHeight = client.textRenderer.fontHeight;
 
-            // Decide which ItemStacks to draw
             List<ItemStack> itemsToDisplay = new ArrayList<>();
             if (isPreview) {
-                // Copy exactly, then pad or truncate to 4
+                // Copy input, then pad or trim to 4
                 for (ItemStack stack : armorItemsInput) {
                     itemsToDisplay.add(stack);
                 }
@@ -306,7 +309,7 @@ public class UtilityModClient implements ClientModInitializer {
                     itemsToDisplay = itemsToDisplay.subList(0, 4);
                 }
             } else {
-                // Only non‐empty slots
+                // Only show non‐empty armor pieces
                 for (ItemStack stack : armorItemsInput) {
                     if (!stack.isEmpty()) {
                         itemsToDisplay.add(stack);
@@ -314,7 +317,6 @@ public class UtilityModClient implements ClientModInitializer {
                 }
             }
 
-            // Now draw each slot vertically
             for (ItemStack itemStack : itemsToDisplay) {
                 String durabilityText = "";
                 if (!itemStack.isEmpty() && itemStack.isDamageable() && itemStack.getMaxDamage() > 0) {
