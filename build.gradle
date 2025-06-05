@@ -33,18 +33,19 @@ loom {
 }
 
 dependencies {
-    // Minecraft, mappings, and Fabric Loader versions are taken from gradle.properties
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    // Fabric API:
-    // This line attempts to include the Fabric API using the 'fabric_version' from gradle.properties.
-    // IT IS CRITICAL that 'project.fabric_version' is a VALID and EXISTING version string
-    // for the monolithic Fabric API jar (e.g., "0.100.3+1.21").
-    // If 'project.fabric_version' is incorrect (like "0.125.3+1.21.5" appears to be),
-    // Gradle will fail to find this dependency, leading to "package does not exist" errors.
+    // This is your existing line for Fabric API. It's important for the common source set
+    // and for Loom to generally know about the API.
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // ---- ADD THIS LINE ----
+    // Explicitly add Fabric API to the client source set's 'implementation' configuration.
+    // This might help if the automatic mechanism isn't working as expected for the client set.
+    clientImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // ---------------------
 }
 
 processResources {
