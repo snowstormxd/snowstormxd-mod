@@ -144,8 +144,7 @@ public class ArmorHudPositionScreen extends Screen {
         UtilityModClient.saveConfig();
         super.close();
     }
-
-    @Override
+    
     public boolean isPauseScreen() {
         return false;
     }
