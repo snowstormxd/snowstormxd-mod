@@ -18,11 +18,11 @@ public class ArmorHudPositionScreen extends Screen {
     private boolean isDragging = false;
     private double dragStartX, dragStartY;
 
-    // Must match the same constants in HudElementsRenderer
+    // Match constants from UtilityModClient.HudElementsRenderer
     private static final int PREVIEW_ICON_SIZE = UtilityModClient.HudElementsRenderer.ICON_SIZE;
     private static final int HUD_PREVIEW_WIDTH = PREVIEW_ICON_SIZE + 30;
     private static final int HUD_PREVIEW_ITEM_BLOCK_HEIGHT = UtilityModClient.HudElementsRenderer.HUD_ITEM_BLOCK_HEIGHT_CALC;
-    private static final int HUD_PREVIEW_HEIGHT = (HUD_PREVIEW_ITEM_BLOCK_HEIGHT * 4)
+    private static final int HUD_PREVIEW_HEIGHT = (HUD_PREVIEW_ITEM_BLOCK_HEIGHT * 4) 
                                                   - UtilityModClient.HudElementsRenderer.SPACING_BETWEEN_ITEMS;
 
     public ArmorHudPositionScreen(Text title) {
@@ -41,8 +41,10 @@ public class ArmorHudPositionScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
-        // Draw a dark translucent background
+
+        // Dark translucent background
         context.fill(0, 0, this.width, this.height, 0x50000000);
+
         Text instructions = Text.literal("Click and drag the Armor HUD to reposition. Press 'Done' or ESC to save.");
         context.drawTextWithShadow(
             this.textRenderer,
@@ -56,7 +58,7 @@ public class ArmorHudPositionScreen extends Screen {
         List<ItemStack> previewArmorItems = new ArrayList<>();
 
         if (player != null) {
-            // Read each armor piece via EquipmentSlot
+            // Read each armor slot via EquipmentSlot
             for (EquipmentSlot slot : new EquipmentSlot[]{
                     EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD
             }) {
@@ -65,7 +67,7 @@ public class ArmorHudPositionScreen extends Screen {
             }
             Collections.reverse(previewArmorItems);
         } else {
-            // No player (e.g. in main menu): show 4 empty slots
+            // No player (e.g. in main menu) → show empty slots
             for (int i = 0; i < 4; i++) {
                 previewArmorItems.add(ItemStack.EMPTY);
             }
@@ -79,6 +81,7 @@ public class ArmorHudPositionScreen extends Screen {
             previewArmorItems = previewArmorItems.subList(0, 4);
         }
 
+        // Render the preview armor HUD
         UtilityModClient.HudElementsRenderer.renderArmorDisplay(
             context,
             previewArmorItems,
@@ -129,4 +132,21 @@ public class ArmorHudPositionScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (isDragging && button == 0) {
-            isDragging
+            isDragging = false;
+            UtilityModClient.LOGGER.info("Armor HUD temporarily at X=" + UtilityModClient.armorHudX + ", Y=" + UtilityModClient.armorHudY);
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public void close() {
+        UtilityModClient.saveConfig();
+        super.close();
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+}
