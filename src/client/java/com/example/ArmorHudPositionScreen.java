@@ -129,21 +129,4 @@ public class ArmorHudPositionScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (isDragging && button == 0) {
-            isDragging = false;
-            UtilityModClient.LOGGER.info("Armor HUD temporarily at X=" + UtilityModClient.armorHudX + ", Y=" + UtilityModClient.armorHudY);
-            return true;
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public void close() {
-        UtilityModClient.saveConfig();
-        super.close();
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
-}
+            isDragging
