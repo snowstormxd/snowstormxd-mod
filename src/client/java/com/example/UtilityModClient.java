@@ -16,14 +16,18 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.LightType;
 import net.minecraft.world.World;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.chunk.WorldChunk;
 
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -42,69 +46,72 @@ import java.util.Properties;
 public class UtilityModClient implements ClientModInitializer {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(UtilityMod.MOD_ID + "_client");
-    public static boolean showLightLevelOverlay = false;
 
+    // Armor HUD position
     public static int armorHudX = 10;
     public static int armorHudY = 10;
 
-    private static KeyBinding lightOverlayKeyBinding;
-    private static KeyBinding positionHudKeyBinding;
-    private static KeyBinding mobSpawnHighlightKeyBinding;
+    // Toggles
+    private static KeyBinding lightOverlayKey;
+    private static boolean showLightOverlay = false;
+    private static KeyBinding positionHudKey;
+    private static KeyBinding mobOverlayKey;
+    public static boolean showMobOverlay = false;
 
+    // Config file
     private static File configFile;
 
     @Override
     public void onInitializeClient() {
+        // --- Load or create config ---
         configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
         loadConfig();
 
-        lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
-            InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_L,
-            "category." + UtilityMod.MOD_ID + ".main"
+        // --- Keybindings ---
+        lightOverlayKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key." + UtilityMod.MOD_ID + ".light_overlay",
+            InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_L,
+            "category." + UtilityMod.MOD_ID
         ));
-        positionHudKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key." + UtilityMod.MOD_ID + ".position_armor_hud",
-            InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_K,
-            "category." + UtilityMod.MOD_ID + ".main"
+        positionHudKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key." + UtilityMod.MOD_ID + ".position_hud",
+            InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K,
+            "category." + UtilityMod.MOD_ID
         ));
-        mobSpawnHighlightKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key." + UtilityMod.MOD_ID + ".toggle_mob_spawn_highlight",
-            InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_0,
-            "category." + UtilityMod.MOD_ID + ".main"
+        mobOverlayKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key." + UtilityMod.MOD_ID + ".mob_overlay",
+            InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_0,
+            "category." + UtilityMod.MOD_ID
         ));
-
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (lightOverlayKeyBinding.wasPressed()) {
-                showLightLevelOverlay = !showLightLevelOverlay;
-                LOGGER.info("Light overlay " + (showLightLevelOverlay ? "ENABLED" : "DISABLED"));
+            while (lightOverlayKey.wasPressed()) {
+                showLightOverlay = !showLightOverlay;
+                LOGGER.info("Light overlay {}", showLightOverlay);
             }
-            while (positionHudKeyBinding.wasPressed()) {
+            while (positionHudKey.wasPressed()) {
                 client.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD")));
             }
-            while (mobSpawnHighlightKeyBinding.wasPressed()) {
-                LOGGER.info("Mob spawn overlay toggled");
+            while (mobOverlayKey.wasPressed()) {
+                showMobOverlay = !showMobOverlay;
+                LOGGER.info("Mob overlay {}", showMobOverlay);
             }
         });
 
+        // --- HUD Rendering (Armor) ---
         HudRenderCallback.EVENT.register((ctx, delta) -> {
-            var mc = MinecraftClient.getInstance();
+            MinecraftClient mc = MinecraftClient.getInstance();
             if (mc.player != null && mc.currentScreen == null) {
-                renderArmorStatus(ctx, mc.player);
+                renderArmorHud(ctx, mc.player);
             }
         });
 
-        WorldRenderEvents.END.register(ctx -> {
-            if (showLightLevelOverlay) {
-                renderLightLevelOverlay(ctx);
-            }
-        });
+        // --- World Rendering (Light Overlay) ---
+        WorldRenderEvents.END.register(this::renderLightOverlay);
+        // You can also register mob overlay similarly...
     }
 
-    public static void loadConfig() {
+    // --- Config load/save ---
+    private static void loadConfig() {
         Properties props = new Properties();
         if (configFile.exists()) {
             try (var r = new FileReader(configFile)) {
@@ -116,11 +123,10 @@ public class UtilityModClient implements ClientModInitializer {
             }
         } else saveConfig();
     }
-
-    public static void saveConfig() {
+    private static void saveConfig() {
         var dir = configFile.getParentFile();
         if (!dir.exists() && !dir.mkdirs()) return;
-        var props = new Properties();
+        Properties props = new Properties();
         props.setProperty("armorHudX", String.valueOf(armorHudX));
         props.setProperty("armorHudY", String.valueOf(armorHudY));
         try (var w = new FileWriter(configFile)) {
@@ -130,100 +136,120 @@ public class UtilityModClient implements ClientModInitializer {
         }
     }
 
-    private void renderArmorStatus(DrawContext ctx, PlayerEntity player) {
+    // --- Armor HUD ---
+    private void renderArmorHud(DrawContext ctx, PlayerEntity player) {
         List<ItemStack> items = new ArrayList<>();
-        for (EquipmentSlot s : new EquipmentSlot[]{ EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD }) {
-            items.add(player.getEquippedStack(s));
+        for (EquipmentSlot slot : new EquipmentSlot[]{
+            EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD
+        }) {
+            items.add(player.getEquippedStack(slot));
         }
         Collections.reverse(items);
         HudElementsRenderer.renderArmorDisplay(ctx, items, armorHudX, armorHudY, false);
     }
 
-    private void renderLightLevelOverlay(WorldRenderContext ctx) {
+    // --- Light Overlay ---
+    private void renderLightOverlay(WorldRenderContext ctx) {
+        if (!showLightOverlay) return;
+
         var mc = MinecraftClient.getInstance();
         PlayerEntity p = mc.player;
-        if (p == null) return;
-
         World w = mc.world;
-        int cx = p.getBlockX() >> 4, cz = p.getBlockZ() >> 4;
-        int baseX = cx << 4, baseZ = cz << 4;
+        if (p == null || w == null) return;
 
+        // Chunk bounds
+        WorldChunk chunk = w.getChunk(p.getBlockPos());
+        BlockPos origin = chunk.getPos().getStartPos();
+
+        // Build VP matrix
         Matrix4f proj = ctx.projectionMatrix();
-        Matrix4f view = ctx.matrixStack().peek().getModelViewMatrix();
+        Matrix4f view = ctx.matrixStack().peek().getPositionMatrix();
         Matrix4f vp = new Matrix4f(proj).mul(view);
 
         Vec3d cam = ctx.camera().getPos();
+        VertexConsumerProvider.Immediate provider = mc.getBufferBuilders().getEntityVertexConsumers();
+
         int fbW = mc.getWindow().getFramebufferWidth();
         int fbH = mc.getWindow().getFramebufferHeight();
 
-        for (int x = baseX; x < baseX + 16; x++) {
-            for (int z = baseZ; z < baseZ + 16; z++) {
-                int y = w.getTopY() - 1;
-                while (y > 0 && w.getBlockState(new BlockPos(x, y, z)).isAir()) y--;
+        for (int dx = 0; dx < 16; dx++) {
+            for (int dz = 0; dz < 16; dz++) {
+                int x = origin.getX() + dx;
+                int z = origin.getZ() + dz;
 
-                int light = w.getLightLevel(LightType.BLOCK, new BlockPos(x, y, z));
-                String s = String.valueOf(light);
+                // Find top block using heightmap
+                int y = w.getTopY(Heightmap.Type.WORLD_SURFACE, x, z) - 1;
+                BlockPos pos = new BlockPos(x, y, z);
 
+                int light = w.getLightLevel(LightType.BLOCK, pos);
+                String txt = String.valueOf(light);
+                if (light < 0) continue;
+
+                // World→clip
                 float wx = (float)(x + 0.5 - cam.x),
                       wy = (float)(y + 1.2 - cam.y),
                       wz = (float)(z + 0.5 - cam.z);
-                Vector4f v4 = new Vector4f(wx, wy, wz, 1f);
-                v4.mul(vp);
-                if (v4.w() <= 0) continue;
+                Vector4f v = new Vector4f(wx, wy, wz, 1f).mul(vp);
+                if (v.w() <= 0) continue;
 
-                float ndcX = v4.x() / v4.w();
-                float ndcY = v4.y() / v4.w();
+                float ndcX = v.x()/v.w();
+                float ndcY = v.y()/v.w();
 
-                int sx = (int)((ndcX * 0.5f + 0.5f) * fbW);
-                int sy = (int)((-ndcY * 0.5f + 0.5f) * fbH);
+                int sx = (int)((ndcX*0.5f + 0.5f)*fbW);
+                int sy = (int)((-ndcY*0.5f + 0.5f)*fbH);
 
-                mc.textRenderer.draw(s, sx - mc.textRenderer.getWidth(s) / 2, sy, 0xFFFFFF);
+                // Draw on screen
+                OrderedText ot = Text.literal(txt).asOrderedText();
+                mc.textRenderer.draw(ot, sx - mc.textRenderer.getWidth(txt)/2f, sy, 0xFFFFFF,
+                    false, proj, provider, false, 0, 15728880);
             }
         }
+
+        provider.draw();
     }
 
+    // --- HUD Elements Renderer (unchanged) ---
     public static class HudElementsRenderer {
         public static final int ICON_SIZE = 16;
         public static final int PADDING_BELOW_TEXT = 2;
         public static final int SPACING_BETWEEN_ITEMS = 4;
         public static final int HUD_ITEM_BLOCK_HEIGHT_CALC =
             MinecraftClient.getInstance().textRenderer.fontHeight
-            + PADDING_BELOW_TEXT
-            + ICON_SIZE
-            + SPACING_BETWEEN_ITEMS;
+            + PADDING_BELOW_TEXT + ICON_SIZE + SPACING_BETWEEN_ITEMS;
 
-        public static void renderArmorDisplay(DrawContext ctx,
-                                              List<ItemStack> items,
-                                              int x, int y,
-                                              boolean preview) {
+        public static void renderArmorDisplay(
+                DrawContext ctx,
+                List<ItemStack> input,
+                int x, int y,
+                boolean preview
+        ) {
             var mc = MinecraftClient.getInstance();
             int curX = x, curY = y, th = mc.textRenderer.fontHeight;
-            List<ItemStack> disp = new ArrayList<>();
+            var items = new ArrayList<>(input);
             if (preview) {
-                disp.addAll(items);
-                while (disp.size() < 4) disp.add(ItemStack.EMPTY);
-                if (disp.size() > 4) disp = disp.subList(0, 4);
+                while (items.size() < 4) items.add(ItemStack.EMPTY);
+                if (items.size() > 4) items.subList(4, items.size()).clear();
             } else {
-                for (var it : items) if (!it.isEmpty()) disp.add(it);
+                items.removeIf(ItemStack::isEmpty);
             }
-            for (ItemStack it : disp) {
-                String txt = "";
-                if (!it.isEmpty() && it.isDamageable() && it.getMaxDamage() > 0) {
-                    int rem = it.getMaxDamage() - it.getDamage();
-                    txt = String.format("%.0f%%", (rem / (double) it.getMaxDamage()) * 100);
-                } else if (!it.isEmpty() && it.isDamageable()) {
-                    txt = "100%";
-                } else if (preview && it.isEmpty()) {
-                    txt = "Slot";
-                }
-                int w = mc.textRenderer.getWidth(txt), tx = curX + (ICON_SIZE - w) / 2;
-                if (!txt.isEmpty()) ctx.drawTextWithShadow(mc.textRenderer, Text.literal(txt), tx, curY,
-                    (preview && it.isEmpty()) ? 0xAAAAAA : 0xFFFFFF);
-                int iconY = curY + (!txt.isEmpty() ? th + PADDING_BELOW_TEXT : 0);
-                if (!it.isEmpty()) ctx.drawItem(it, curX, iconY);
-                else if (preview) ctx.fill(curX, iconY, curX + ICON_SIZE, iconY + ICON_SIZE, 0x50808080);
+            for (ItemStack it : items) {
+                String dt = "";
+                if (!it.isEmpty() && it.isDamageable() && it.getMaxDamage()>0) {
+                    double pct = (it.getMaxDamage()-it.getDamage())/(double)it.getMaxDamage()*100;
+                    dt = String.format("%.0f%%", pct);
+                } else if (preview && it.isEmpty()) dt = "Slot";
 
-                curY += (!txt.isEmpty() ? th + PADDING_BELOW_TEXT : 0) + ICON_SIZE + SPACING_BETWEEN_ITEMS;
+                int w = mc.textRenderer.getWidth(dt);
+                if (!dt.isEmpty()) {
+                    ctx.drawTextWithShadow(mc.textRenderer, Text.literal(dt), curX + (ICON_SIZE-w)/2, curY,
+                        dt.equals("Slot")?0xAAAAAA:0xFFFFFF);
+                }
+
+                int iconY = curY + (!dt.isEmpty()?th+PADDING_BELOW_TEXT:0);
+                if (!it.isEmpty()) ctx.drawItem(it, curX, iconY);
+                else if (preview) ctx.fill(curX,iconY,curX+ICON_SIZE,iconY+ICON_SIZE,0x50808080);
+
+                curY += (!dt.isEmpty()?th+PADDING_BELOW_TEXT:0) + ICON_SIZE + SPACING_BETWEEN_ITEMS;
             }
         }
     }
