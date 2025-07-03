@@ -18,8 +18,8 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.LightType;
-import net.minecraft.world.World;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
 
 import org.lwjgl.glfw.GLFW;
@@ -43,7 +43,7 @@ public class UtilityModClient implements ClientModInitializer {
     public static int armorHudX = 10;
     public static int armorHudY = 10;
 
-    // Toggles
+    // Toggles & keybinds
     private static KeyBinding lightOverlayKey;
     private static boolean showLightOverlay = false;
     private static KeyBinding positionHudKey;
@@ -55,11 +55,12 @@ public class UtilityModClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // Load config
-        configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
+        // Config
+        configFile = new File(MinecraftClient.getInstance().runDirectory,
+                              "config/" + UtilityMod.MOD_ID + ".properties");
         loadConfig();
 
-        // Keybinds
+        // Keybindings
         lightOverlayKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key." + UtilityMod.MOD_ID + ".light_overlay",
             InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_L,
@@ -76,13 +77,13 @@ public class UtilityModClient implements ClientModInitializer {
             "category." + UtilityMod.MOD_ID
         ));
 
-        ClientTickEvents.END_CLIENT_TICK.register(c -> {
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (lightOverlayKey.wasPressed()) {
                 showLightOverlay = !showLightOverlay;
                 LOGGER.info("Light overlay {}", showLightOverlay);
             }
             while (positionHudKey.wasPressed()) {
-                c.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD")));
+                client.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD")));
             }
             while (mobOverlayKey.wasPressed()) {
                 showMobOverlay = !showMobOverlay;
@@ -90,15 +91,31 @@ public class UtilityModClient implements ClientModInitializer {
             }
         });
 
-        // Render HUDs
-        HudRenderCallback.EVENT.register(this::onHudRender);
+        // HUD render: armor HUD + light overlay
+        HudRenderCallback.EVENT.register((ctx, tick) -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            PlayerEntity player = mc.player;
+            if (player == null) return;
+
+            // 1) Armor HUD
+            if (mc.currentScreen == null) {
+                renderArmorHud(ctx, player);
+            }
+
+            // 2) Light overlay
+            if (showLightOverlay) {
+                renderLightOverlay(ctx, player, mc.world);
+            }
+
+            // 3) Mob overlay stub (not implemented)
+        });
     }
 
-    // Public so ArmorHudPositionScreen can call it
+    // Public so the screen can save config
     public static void saveConfig() {
         var dir = configFile.getParentFile();
         if (!dir.exists() && !dir.mkdirs()) {
-            LOGGER.error("Could not create config dir");
+            LOGGER.error("Could not create config directory");
             return;
         }
         Properties p = new Properties();
@@ -126,45 +143,28 @@ public class UtilityModClient implements ClientModInitializer {
         }
     }
 
-    private void onHudRender(DrawContext ctx, float tickDelta) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        PlayerEntity player = mc.player;
-        if (player == null) return;
-
-        // 1) Armor HUD
-        if (mc.currentScreen == null) {
-            renderArmorHud(ctx, player);
-        }
-
-        // 2) Light overlay
-        if (showLightOverlay) {
-            renderLightOverlay(ctx, player, mc.world);
-        }
-
-        // 3) Mob overlay stub (not implemented)
-        // if (showMobOverlay) { ... }
-    }
-
+    // Renders the 4‑slot armor HUD at (armorHudX, armorHudY)
     private void renderArmorHud(DrawContext ctx, PlayerEntity p) {
-        List<ItemStack> arr = new ArrayList<>();
+        List<ItemStack> items = new ArrayList<>();
         for (EquipmentSlot s : new EquipmentSlot[]{
-            EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD
+            EquipmentSlot.FEET, EquipmentSlot.LEGS,
+            EquipmentSlot.CHEST, EquipmentSlot.HEAD
         }) {
-            arr.add(p.getEquippedStack(s));
+            items.add(p.getEquippedStack(s));
         }
-        Collections.reverse(arr);
-        HudElementsRenderer.renderArmorDisplay(ctx, arr, armorHudX, armorHudY, false);
+        Collections.reverse(items);
+        HudElementsRenderer.renderArmorDisplay(ctx, items, armorHudX, armorHudY, false);
     }
 
-    private void renderLightOverlay(DrawContext ctx, PlayerEntity p, World w) {
-        // Determine current chunk origin
+    // Renders block light levels as text for the 16×16 chunk around the player
+    private void renderLightOverlay(DrawContext ctx, PlayerEntity p, World world) {
         BlockPos bp = p.getBlockPos();
         int cx = bp.getX() >> 4, cz = bp.getZ() >> 4;
-        Chunk chunk = w.getChunk(cx, cz);
+        Chunk chunk = world.getChunk(cx, cz);
         BlockPos origin = chunk.getPos().getStartPos();
 
-        // Camera info
-        Vec3d cam = ctx.getCamera().getPos();
+        Vec3d cam = MinecraftClient.getInstance()
+                        .gameRenderer.getCamera().getPos();
         int sw = ctx.getScaledWindowWidth();
         int sh = ctx.getScaledWindowHeight();
 
@@ -173,59 +173,68 @@ public class UtilityModClient implements ClientModInitializer {
                 int x = origin.getX() + dx;
                 int z = origin.getZ() + dz;
 
-                // Top block via Heightmap
-                int y = w.getTopY(Heightmap.Type.WORLD_SURFACE, x, z) - 1;
+                // Surface block via Heightmap
+                int y = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z) - 1;
                 BlockPos pos = new BlockPos(x, y, z);
 
-                int light = w.getLightLevel(LightType.BLOCK, pos);
-                String txt = String.valueOf(light);
+                int light = world.getLightLevel(LightType.BLOCK, pos);
+                String s = String.valueOf(light);
 
-                // Project to screen (simple orthographic for HUD)
-                double dxp = x + 0.5 - cam.x;
-                double dyp = y + 1.2 - cam.y;
-                double dzp = z + 0.5 - cam.z;
+                // Simple world→HUD coords:
+                double wx = x + 0.5 - cam.x;
+                double wy = y + 1.2 - cam.y;
+                double wz = z + 0.5 - cam.z;
 
-                // Map to 2D: center + offset (no real perspective)
-                int sx = sw/2 + (int)(dxp * 8);
-                int sy = sh/2 - (int)(dzp * 8) - (int)(dyp * 4);
+                int sx = sw / 2 + (int)(wx * 4);
+                int sy = sh / 2 - (int)(wz * 4) - (int)(wy * 4);
 
-                ctx.drawTextWithShadow(mc.textRenderer, Text.literal(txt),
-                                       sx - mc.textRenderer.getWidth(txt)/2,
-                                       sy, 0xFFFFFF);
+                ctx.drawTextWithShadow(
+                    MinecraftClient.getInstance().textRenderer,
+                    Text.literal(s),
+                    sx - MinecraftClient.getInstance()
+                         .textRenderer.getWidth(s)/2,
+                    sy,
+                    0xFFFFFF
+                );
             }
         }
     }
 
-    // HUD Elements Renderer (unchanged)
+
+    // Nested class to render the Armor HUD slots
     public static class HudElementsRenderer {
         public static final int ICON_SIZE = 16;
         public static final int PADDING_BELOW_TEXT = 2;
         public static final int SPACING_BETWEEN_ITEMS = 4;
         public static final int HUD_ITEM_BLOCK_HEIGHT_CALC =
-            MinecraftClient.getInstance().textRenderer.fontHeight
+            MinecraftClient.getInstance()
+                         .textRenderer.fontHeight
             + PADDING_BELOW_TEXT
             + ICON_SIZE
             + SPACING_BETWEEN_ITEMS;
 
         public static void renderArmorDisplay(
             DrawContext ctx,
-            List<ItemStack> items,
+            List<ItemStack> input,
             int x, int y,
             boolean preview
         ) {
             var mc = MinecraftClient.getInstance();
             int curX = x, curY = y, th = mc.textRenderer.fontHeight;
-            List<ItemStack> disp = new ArrayList<>(items);
+
+            List<ItemStack> items = new ArrayList<>(input);
             if (preview) {
-                while (disp.size() < 4) disp.add(ItemStack.EMPTY);
-                if (disp.size() > 4) disp.subList(4, disp.size()).clear();
+                while (items.size() < 4) items.add(ItemStack.EMPTY);
+                if (items.size() > 4) items.subList(4, items.size()).clear();
             } else {
-                disp.removeIf(ItemStack::isEmpty);
+                items.removeIf(ItemStack::isEmpty);
             }
-            for (ItemStack it : disp) {
+
+            for (ItemStack it : items) {
                 String dt = "";
                 if (!it.isEmpty() && it.isDamageable() && it.getMaxDamage() > 0) {
-                    double pct = (it.getMaxDamage() - it.getDamage()) / (double)it.getMaxDamage() * 100;
+                    double pct = (it.getMaxDamage() - it.getDamage())
+                                 / (double)it.getMaxDamage() * 100;
                     dt = String.format("%.0f%%", pct);
                 } else if (preview && it.isEmpty()) {
                     dt = "Slot";
@@ -233,17 +242,31 @@ public class UtilityModClient implements ClientModInitializer {
 
                 int w = mc.textRenderer.getWidth(dt);
                 if (!dt.isEmpty()) {
-                    ctx.drawTextWithShadow(mc.textRenderer, Text.literal(dt),
-                        curX + (ICON_SIZE - w)/2, curY,
-                        dt.equals("Slot") ? 0xAAAAAA : 0xFFFFFF);
+                    ctx.drawTextWithShadow(
+                        mc.textRenderer,
+                        Text.literal(dt),
+                        curX + (ICON_SIZE - w)/2,
+                        curY,
+                        dt.equals("Slot") ? 0xAAAAAA : 0xFFFFFF
+                    );
                 }
 
-                int iconY = curY + (!dt.isEmpty() ? th + PADDING_BELOW_TEXT : 0);
-                if (!it.isEmpty()) ctx.drawItem(it, curX, iconY);
-                else if (preview) ctx.fill(curX, iconY, curX+ICON_SIZE, iconY+ICON_SIZE, 0x50808080);
+                int iconY = curY
+                          + (!dt.isEmpty() ? th + PADDING_BELOW_TEXT : 0);
+                if (!it.isEmpty()) {
+                    ctx.drawItem(it, curX, iconY);
+                } else if (preview) {
+                    ctx.fill(
+                        curX, iconY,
+                        curX + ICON_SIZE,
+                        iconY + ICON_SIZE,
+                        0x50808080
+                    );
+                }
 
                 curY += (!dt.isEmpty() ? th + PADDING_BELOW_TEXT : 0)
-                        + ICON_SIZE + SPACING_BETWEEN_ITEMS;
+                        + ICON_SIZE
+                        + SPACING_BETWEEN_ITEMS;
             }
         }
     }
