@@ -1,7 +1,7 @@
 package com.example;
 
-import com.mojang.math.Matrix4f;
-import com.mojang.math.Vector4f;
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
@@ -44,7 +44,6 @@ public class UtilityModClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(UtilityMod.MOD_ID + "_client");
     public static boolean showLightLevelOverlay = false;
 
-    // Default position for the Armor HUD
     public static int armorHudX = 10;
     public static int armorHudY = 10;
 
@@ -54,33 +53,28 @@ public class UtilityModClient implements ClientModInitializer {
 
     private static File configFile;
 
-    // Toggle for the mob‐spawn highlight overlay
-    public static boolean showMobSpawnHighlightOverlay = false;
-
     @Override
     public void onInitializeClient() {
-        // config
         configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
         loadConfig();
 
-        // keybinds
         lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_L,
-                "category." + UtilityMod.MOD_ID + ".main"
+            "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_L,
+            "category." + UtilityMod.MOD_ID + ".main"
         ));
         positionHudKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + UtilityMod.MOD_ID + ".position_armor_hud",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_K,
-                "category." + UtilityMod.MOD_ID + ".main"
+            "key." + UtilityMod.MOD_ID + ".position_armor_hud",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_K,
+            "category." + UtilityMod.MOD_ID + ".main"
         ));
         mobSpawnHighlightKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key." + UtilityMod.MOD_ID + ".toggle_mob_spawn_highlight",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_0,
-                "category." + UtilityMod.MOD_ID + ".main"
+            "key." + UtilityMod.MOD_ID + ".toggle_mob_spawn_highlight",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_0,
+            "category." + UtilityMod.MOD_ID + ".main"
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -92,12 +86,10 @@ public class UtilityModClient implements ClientModInitializer {
                 client.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD")));
             }
             while (mobSpawnHighlightKeyBinding.wasPressed()) {
-                showMobSpawnHighlightOverlay = !showMobSpawnHighlightOverlay;
-                LOGGER.info("Mob overlay " + (showMobSpawnHighlightOverlay ? "ENABLED" : "DISABLED"));
+                LOGGER.info("Mob spawn overlay toggled");
             }
         });
 
-        // Armor HUD
         HudRenderCallback.EVENT.register((ctx, delta) -> {
             var mc = MinecraftClient.getInstance();
             if (mc.player != null && mc.currentScreen == null) {
@@ -105,22 +97,12 @@ public class UtilityModClient implements ClientModInitializer {
             }
         });
 
-        // Light overlay in world
         WorldRenderEvents.END.register(ctx -> {
             if (showLightLevelOverlay) {
                 renderLightLevelOverlay(ctx);
             }
         });
-
-        // Stub mob spawn
-        WorldRenderEvents.END.register(ctx -> {
-            if (showMobSpawnHighlightOverlay) {
-                // (unchanged stub)
-            }
-        });
     }
-
-    // ── CONFIG ─────────────────────────────────────────────────────────────────────
 
     public static void loadConfig() {
         Properties props = new Properties();
@@ -130,10 +112,11 @@ public class UtilityModClient implements ClientModInitializer {
                 armorHudX = Integer.parseInt(props.getProperty("armorHudX", "10"));
                 armorHudY = Integer.parseInt(props.getProperty("armorHudY", "10"));
             } catch (IOException|NumberFormatException e) {
-                LOGGER.error("Failed load config", e);
+                LOGGER.error("Failed to load config", e);
             }
         } else saveConfig();
     }
+
     public static void saveConfig() {
         var dir = configFile.getParentFile();
         if (!dir.exists() && !dir.mkdirs()) return;
@@ -141,77 +124,63 @@ public class UtilityModClient implements ClientModInitializer {
         props.setProperty("armorHudX", String.valueOf(armorHudX));
         props.setProperty("armorHudY", String.valueOf(armorHudY));
         try (var w = new FileWriter(configFile)) {
-            props.store(w, UtilityMod.MOD_ID+" config");
-        } catch(IOException e){ LOGGER.error("Failed save config",e); }
+            props.store(w, UtilityMod.MOD_ID + " config");
+        } catch (IOException e) {
+            LOGGER.error("Failed to save config", e);
+        }
     }
 
-    // ── ARMOR HUD ──────────────────────────────────────────────────────────────────
-
-    private void renderArmorStatus(DrawContext ctx, PlayerEntity p) {
+    private void renderArmorStatus(DrawContext ctx, PlayerEntity player) {
         List<ItemStack> items = new ArrayList<>();
         for (EquipmentSlot s : new EquipmentSlot[]{ EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD }) {
-            items.add(p.getEquippedStack(s));
+            items.add(player.getEquippedStack(s));
         }
         Collections.reverse(items);
         HudElementsRenderer.renderArmorDisplay(ctx, items, armorHudX, armorHudY, false);
     }
 
-    // ── LIGHT LEVEL OVERLAY ─────────────────────────────────────────────────────────
-
     private void renderLightLevelOverlay(WorldRenderContext ctx) {
         var mc = MinecraftClient.getInstance();
         PlayerEntity p = mc.player;
-        if (p==null) return;
+        if (p == null) return;
 
         World w = mc.world;
-        // current chunk coords
-        int cx = p.getBlockX()>>4, cz = p.getBlockZ()>>4;
-        int baseX = cx<<4, baseZ = cz<<4;
+        int cx = p.getBlockX() >> 4, cz = p.getBlockZ() >> 4;
+        int baseX = cx << 4, baseZ = cz << 4;
 
-        // build view×projection matrix
         Matrix4f proj = ctx.projectionMatrix();
         Matrix4f view = ctx.matrixStack().peek().getModelViewMatrix();
-        Matrix4f vp = new Matrix4f(proj).multiply(view);
+        Matrix4f vp = new Matrix4f(proj).mul(view);
 
         Vec3d cam = ctx.camera().getPos();
         int fbW = mc.getWindow().getFramebufferWidth();
         int fbH = mc.getWindow().getFramebufferHeight();
 
-        for (int x = baseX; x<baseX+16; x++) {
-            for (int z = baseZ; z<baseZ+16; z++) {
-                // top block
-                int y = w.getTopY()-1;
-                while (y>0 && w.getBlockState(new BlockPos(x,y,z)).isAir()) y--;
-                int light = w.getLightLevel(LightType.BLOCK, new BlockPos(x,y,z));
+        for (int x = baseX; x < baseX + 16; x++) {
+            for (int z = baseZ; z < baseZ + 16; z++) {
+                int y = w.getTopY() - 1;
+                while (y > 0 && w.getBlockState(new BlockPos(x, y, z)).isAir()) y--;
+
+                int light = w.getLightLevel(LightType.BLOCK, new BlockPos(x, y, z));
                 String s = String.valueOf(light);
 
-                // world→clip
-                float wx=(float)(x+0.5 - cam.x),
-                      wy=(float)(y+1.2 - cam.y),
-                      wz=(float)(z+0.5 - cam.z);
-                var v4 = new Vector4f(wx,wy,wz,1f);
-                v4.transform(vp);
-                if (v4.w()<=0) continue;
-                float ndcX = v4.x()/v4.w();
-                float ndcY = v4.y()/v4.w();
+                float wx = (float)(x + 0.5 - cam.x),
+                      wy = (float)(y + 1.2 - cam.y),
+                      wz = (float)(z + 0.5 - cam.z);
+                Vector4f v4 = new Vector4f(wx, wy, wz, 1f);
+                v4.mul(vp);
+                if (v4.w() <= 0) continue;
 
-                int sx = (int)((ndcX*0.5f+0.5f)*fbW);
-                int sy = (int)((-ndcY*0.5f+0.5f)*fbH);
+                float ndcX = v4.x() / v4.w();
+                float ndcY = v4.y() / v4.w();
 
-                // draw text
-                mc.textRenderer.draw(s, sx - mc.textRenderer.getWidth(s)/2, sy, 0xFFFFFF);
+                int sx = (int)((ndcX * 0.5f + 0.5f) * fbW);
+                int sy = (int)((-ndcY * 0.5f + 0.5f) * fbH);
+
+                mc.textRenderer.draw(s, sx - mc.textRenderer.getWidth(s) / 2, sy, 0xFFFFFF);
             }
         }
     }
-
-    // ── MOB SPAWN (stub) ────────────────────────────────────────────────────────────
-
-    private void renderMobSpawnHighlights(WorldRenderContext ctx) {
-        // unchanged stub
-    }
-
-
-    // ── HUD ELEMENTS RENDERER ────────────────────────────────────────────────────────
 
     public static class HudElementsRenderer {
         public static final int ICON_SIZE = 16;
@@ -223,38 +192,38 @@ public class UtilityModClient implements ClientModInitializer {
             + ICON_SIZE
             + SPACING_BETWEEN_ITEMS;
 
-        public static void renderArmorDisplay(
-            DrawContext ctx, List<ItemStack> items,
-            int x, int y, boolean preview
-        ) {
+        public static void renderArmorDisplay(DrawContext ctx,
+                                              List<ItemStack> items,
+                                              int x, int y,
+                                              boolean preview) {
             var mc = MinecraftClient.getInstance();
-            int curX=x, curY=y, th=mc.textRenderer.fontHeight;
-            List<ItemStack> disp=new ArrayList<>();
+            int curX = x, curY = y, th = mc.textRenderer.fontHeight;
+            List<ItemStack> disp = new ArrayList<>();
             if (preview) {
                 disp.addAll(items);
-                while (disp.size()<4) disp.add(ItemStack.EMPTY);
-                if (disp.size()>4) disp=disp.subList(0,4);
+                while (disp.size() < 4) disp.add(ItemStack.EMPTY);
+                if (disp.size() > 4) disp = disp.subList(0, 4);
             } else {
-                for (var it:items) if (!it.isEmpty()) disp.add(it);
+                for (var it : items) if (!it.isEmpty()) disp.add(it);
             }
-            for (ItemStack it:disp) {
-                String txt="";
-                if (!it.isEmpty()&&it.isDamageable()&& it.getMaxDamage()>0) {
-                    int rem=it.getMaxDamage()-it.getDamage();
-                    txt = String.format("%.0f%%",(rem/(double)it.getMaxDamage())*100);
-                } else if (!it.isEmpty()&&it.isDamageable()) {
+            for (ItemStack it : disp) {
+                String txt = "";
+                if (!it.isEmpty() && it.isDamageable() && it.getMaxDamage() > 0) {
+                    int rem = it.getMaxDamage() - it.getDamage();
+                    txt = String.format("%.0f%%", (rem / (double) it.getMaxDamage()) * 100);
+                } else if (!it.isEmpty() && it.isDamageable()) {
                     txt = "100%";
-                } else if (preview&&it.isEmpty()) {
-                    txt="Slot";
+                } else if (preview && it.isEmpty()) {
+                    txt = "Slot";
                 }
-                int w=mc.textRenderer.getWidth(txt), tx=curX+(ICON_SIZE-w)/2;
+                int w = mc.textRenderer.getWidth(txt), tx = curX + (ICON_SIZE - w) / 2;
                 if (!txt.isEmpty()) ctx.drawTextWithShadow(mc.textRenderer, Text.literal(txt), tx, curY,
-                    (preview&&it.isEmpty())?0xAAAAAA:0xFFFFFF);
-                int iconY = curY + (!txt.isEmpty()?th+PADDING_BELOW_TEXT:0);
+                    (preview && it.isEmpty()) ? 0xAAAAAA : 0xFFFFFF);
+                int iconY = curY + (!txt.isEmpty() ? th + PADDING_BELOW_TEXT : 0);
                 if (!it.isEmpty()) ctx.drawItem(it, curX, iconY);
-                else if (preview) ctx.fill(curX,iconY,curX+ICON_SIZE,iconY+ICON_SIZE,0x50808080);
+                else if (preview) ctx.fill(curX, iconY, curX + ICON_SIZE, iconY + ICON_SIZE, 0x50808080);
 
-                curY += (!txt.isEmpty()?th+PADDING_BELOW_TEXT:0) + ICON_SIZE + SPACING_BETWEEN_ITEMS;
+                curY += (!txt.isEmpty() ? th + PADDING_BELOW_TEXT : 0) + ICON_SIZE + SPACING_BETWEEN_ITEMS;
             }
         }
     }
