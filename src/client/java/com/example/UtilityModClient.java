@@ -1,5 +1,8 @@
 package com.example;
 
+import com.mojang.math.Matrix4f;
+import com.mojang.math.Vector4f;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -20,7 +23,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.LightType;
-import net.minecraft.block.BlockState;
+import net.minecraft.world.World;
 
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -54,28 +57,13 @@ public class UtilityModClient implements ClientModInitializer {
     // Toggle for the mob‐spawn highlight overlay
     public static boolean showMobSpawnHighlightOverlay = false;
 
-    // Light‐level thresholds (block light)
-    private static final int LIGHT_LEVEL_RED_MAX = 0;    // ≤ 0 → RED
-    private static final int LIGHT_LEVEL_YELLOW_MAX = 7; // 1–7 → YELLOW, >7 → GREEN
-
-    // ARGB colors (semi‐transparent)
-    private static final int COLOR_RED = 0x70FF0000;
-    private static final int COLOR_YELLOW = 0x70FFFF00;
-    private static final int COLOR_GREEN = 0x7000FF00;
-
-    // Scan radius around the player
-    private static final int SCAN_RADIUS_HORIZONTAL = 8;
-    private static final int SCAN_RADIUS_VERTICAL = 4;
-
     @Override
     public void onInitializeClient() {
-        LOGGER.info("Initializing client‐side features for " + UtilityMod.MOD_ID);
-
-        // 1) Set up config file path
+        // config
         configFile = new File(MinecraftClient.getInstance().runDirectory, "config/" + UtilityMod.MOD_ID + ".properties");
         loadConfig();
 
-        // 2) Register key bindings
+        // keybinds
         lightOverlayKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key." + UtilityMod.MOD_ID + ".toggle_light_overlay",
                 InputUtil.Type.KEYSYM,
@@ -95,95 +83,133 @@ public class UtilityModClient implements ClientModInitializer {
                 "category." + UtilityMod.MOD_ID + ".main"
         ));
 
-        // 3) Listen for key presses each tick
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (lightOverlayKeyBinding.wasPressed()) {
                 showLightLevelOverlay = !showLightLevelOverlay;
-                LOGGER.info("Light level overlay " + (showLightLevelOverlay ? "ENABLED" : "DISABLED"));
+                LOGGER.info("Light overlay " + (showLightLevelOverlay ? "ENABLED" : "DISABLED"));
             }
             while (positionHudKeyBinding.wasPressed()) {
                 client.setScreen(new ArmorHudPositionScreen(Text.literal("Position Armor HUD")));
             }
             while (mobSpawnHighlightKeyBinding.wasPressed()) {
                 showMobSpawnHighlightOverlay = !showMobSpawnHighlightOverlay;
-                LOGGER.info("Mob Spawn Highlight Overlay " + (showMobSpawnHighlightOverlay ? "ENABLED" : "DISABLED"));
+                LOGGER.info("Mob overlay " + (showMobSpawnHighlightOverlay ? "ENABLED" : "DISABLED"));
             }
         });
 
-        // 4) Draw the Armor HUD on the in‐game HUD
-        HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
-            MinecraftClient mc = MinecraftClient.getInstance();
+        // Armor HUD
+        HudRenderCallback.EVENT.register((ctx, delta) -> {
+            var mc = MinecraftClient.getInstance();
             if (mc.player != null && mc.currentScreen == null) {
-                renderArmorStatus(drawContext, mc.player);
+                renderArmorStatus(ctx, mc.player);
             }
         });
 
-        // 5) Stubbed‐out mob spawn highlights (no rendering calls to missing APIs)
-        WorldRenderEvents.END.register(context -> {
+        // Light overlay in world
+        WorldRenderEvents.END.register(ctx -> {
+            if (showLightLevelOverlay) {
+                renderLightLevelOverlay(ctx);
+            }
+        });
+
+        // Stub mob spawn
+        WorldRenderEvents.END.register(ctx -> {
             if (showMobSpawnHighlightOverlay) {
-                // We’re stubbing this out because the old rendering methods no longer exist.
-                // If you want to add real highlighting in 1.21.5, you’ll need to use
-                // the new Fabric rendering pipeline (VertexConsumers, custom RenderLayer, etc.).
-                // For now, do nothing so it compiles.
+                // (unchanged stub)
             }
         });
     }
 
-    // ── CONFIG LOADING / SAVING ─────────────────────────────────────────────────────
+    // ── CONFIG ─────────────────────────────────────────────────────────────────────
 
     public static void loadConfig() {
-        Properties properties = new Properties();
+        Properties props = new Properties();
         if (configFile.exists()) {
-            try (FileReader reader = new FileReader(configFile)) {
-                properties.load(reader);
-                armorHudX = Integer.parseInt(properties.getProperty("armorHudX", "10"));
-                armorHudY = Integer.parseInt(properties.getProperty("armorHudY", "10"));
-                LOGGER.info("Loaded Armor HUD position: X=" + armorHudX + ", Y=" + armorHudY);
-            } catch (IOException | NumberFormatException e) {
-                LOGGER.error("Failed to load config, using defaults.", e);
+            try (var r = new FileReader(configFile)) {
+                props.load(r);
+                armorHudX = Integer.parseInt(props.getProperty("armorHudX", "10"));
+                armorHudY = Integer.parseInt(props.getProperty("armorHudY", "10"));
+            } catch (IOException|NumberFormatException e) {
+                LOGGER.error("Failed load config", e);
             }
-        } else {
-            saveConfig();
-        }
+        } else saveConfig();
     }
-
     public static void saveConfig() {
-        File configDir = configFile.getParentFile();
-        if (!configDir.exists() && !configDir.mkdirs()) {
-            LOGGER.error("Could not create config directory: " + configDir.getAbsolutePath());
-            return;
+        var dir = configFile.getParentFile();
+        if (!dir.exists() && !dir.mkdirs()) return;
+        var props = new Properties();
+        props.setProperty("armorHudX", String.valueOf(armorHudX));
+        props.setProperty("armorHudY", String.valueOf(armorHudY));
+        try (var w = new FileWriter(configFile)) {
+            props.store(w, UtilityMod.MOD_ID+" config");
+        } catch(IOException e){ LOGGER.error("Failed save config",e); }
+    }
+
+    // ── ARMOR HUD ──────────────────────────────────────────────────────────────────
+
+    private void renderArmorStatus(DrawContext ctx, PlayerEntity p) {
+        List<ItemStack> items = new ArrayList<>();
+        for (EquipmentSlot s : new EquipmentSlot[]{ EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD }) {
+            items.add(p.getEquippedStack(s));
         }
-        Properties properties = new Properties();
-        properties.setProperty("armorHudX", String.valueOf(armorHudX));
-        properties.setProperty("armorHudY", String.valueOf(armorHudY));
-        try (FileWriter writer = new FileWriter(configFile)) {
-            properties.store(writer, UtilityMod.MOD_ID + " Config");
-            LOGGER.info("Saved Armor HUD position: X=" + armorHudX + ", Y=" + armorHudY);
-        } catch (IOException e) {
-            LOGGER.error("Failed to save config.", e);
+        Collections.reverse(items);
+        HudElementsRenderer.renderArmorDisplay(ctx, items, armorHudX, armorHudY, false);
+    }
+
+    // ── LIGHT LEVEL OVERLAY ─────────────────────────────────────────────────────────
+
+    private void renderLightLevelOverlay(WorldRenderContext ctx) {
+        var mc = MinecraftClient.getInstance();
+        PlayerEntity p = mc.player;
+        if (p==null) return;
+
+        World w = mc.world;
+        // current chunk coords
+        int cx = p.getBlockX()>>4, cz = p.getBlockZ()>>4;
+        int baseX = cx<<4, baseZ = cz<<4;
+
+        // build view×projection matrix
+        Matrix4f proj = ctx.projectionMatrix();
+        Matrix4f view = ctx.matrixStack().peek().getModelViewMatrix();
+        Matrix4f vp = new Matrix4f(proj).multiply(view);
+
+        Vec3d cam = ctx.camera().getPos();
+        int fbW = mc.getWindow().getFramebufferWidth();
+        int fbH = mc.getWindow().getFramebufferHeight();
+
+        for (int x = baseX; x<baseX+16; x++) {
+            for (int z = baseZ; z<baseZ+16; z++) {
+                // top block
+                int y = w.getTopY()-1;
+                while (y>0 && w.getBlockState(new BlockPos(x,y,z)).isAir()) y--;
+                int light = w.getLightLevel(LightType.BLOCK, new BlockPos(x,y,z));
+                String s = String.valueOf(light);
+
+                // world→clip
+                float wx=(float)(x+0.5 - cam.x),
+                      wy=(float)(y+1.2 - cam.y),
+                      wz=(float)(z+0.5 - cam.z);
+                var v4 = new Vector4f(wx,wy,wz,1f);
+                v4.transform(vp);
+                if (v4.w()<=0) continue;
+                float ndcX = v4.x()/v4.w();
+                float ndcY = v4.y()/v4.w();
+
+                int sx = (int)((ndcX*0.5f+0.5f)*fbW);
+                int sy = (int)((-ndcY*0.5f+0.5f)*fbH);
+
+                // draw text
+                mc.textRenderer.draw(s, sx - mc.textRenderer.getWidth(s)/2, sy, 0xFFFFFF);
+            }
         }
     }
 
-    // ── RENDER MOB SPAWN HIGHLIGHTS (STUB) ─────────────────────────────────────────────
+    // ── MOB SPAWN (stub) ────────────────────────────────────────────────────────────
 
-    private void renderMobSpawnHighlights(WorldRenderContext context) {
-        // Intentionally empty—no calls to Tessellator, RenderSystem, etc., so it compiles.
+    private void renderMobSpawnHighlights(WorldRenderContext ctx) {
+        // unchanged stub
     }
 
-    // ── RENDER ARMOR STATUS HUD ─────────────────────────────────────────────────────
-
-    private void renderArmorStatus(DrawContext drawContext, PlayerEntity player) {
-        List<ItemStack> armorItems = new ArrayList<>();
-        // Read each armor piece via EquipmentSlot
-        for (EquipmentSlot slot : new EquipmentSlot[]{
-                EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD
-        }) {
-            ItemStack stack = player.getEquippedStack(slot);
-            armorItems.add(stack);
-        }
-        Collections.reverse(armorItems); // helmet first
-        HudElementsRenderer.renderArmorDisplay(drawContext, armorItems, armorHudX, armorHudY, false);
-    }
 
     // ── HUD ELEMENTS RENDERER ────────────────────────────────────────────────────────
 
@@ -197,84 +223,38 @@ public class UtilityModClient implements ClientModInitializer {
             + ICON_SIZE
             + SPACING_BETWEEN_ITEMS;
 
-        /**
-         * Renders a vertical, 4‐slot armor HUD at (x, y).
-         * If isPreview is true, always show exactly 4 slots (possibly empty).
-         * Otherwise, only non‐empty armor pieces are displayed.
-         */
         public static void renderArmorDisplay(
-                DrawContext drawContext,
-                List<ItemStack> armorItemsInput,
-                int x, int y,
-                boolean isPreview
+            DrawContext ctx, List<ItemStack> items,
+            int x, int y, boolean preview
         ) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            int currentX = x;
-            int currentY = y;
-            int textHeight = client.textRenderer.fontHeight;
-
-            List<ItemStack> itemsToDisplay = new ArrayList<>();
-            if (isPreview) {
-                // Copy input, then pad or trim to 4
-                for (ItemStack stack : armorItemsInput) {
-                    itemsToDisplay.add(stack);
-                }
-                while (itemsToDisplay.size() < 4) {
-                    itemsToDisplay.add(ItemStack.EMPTY);
-                }
-                if (itemsToDisplay.size() > 4) {
-                    itemsToDisplay = itemsToDisplay.subList(0, 4);
-                }
+            var mc = MinecraftClient.getInstance();
+            int curX=x, curY=y, th=mc.textRenderer.fontHeight;
+            List<ItemStack> disp=new ArrayList<>();
+            if (preview) {
+                disp.addAll(items);
+                while (disp.size()<4) disp.add(ItemStack.EMPTY);
+                if (disp.size()>4) disp=disp.subList(0,4);
             } else {
-                // Only show non‐empty armor pieces
-                for (ItemStack stack : armorItemsInput) {
-                    if (!stack.isEmpty()) {
-                        itemsToDisplay.add(stack);
-                    }
-                }
+                for (var it:items) if (!it.isEmpty()) disp.add(it);
             }
-
-            for (ItemStack itemStack : itemsToDisplay) {
-                String durabilityText = "";
-                if (!itemStack.isEmpty() && itemStack.isDamageable() && itemStack.getMaxDamage() > 0) {
-                    int maxDamage = itemStack.getMaxDamage();
-                    int currentDamage = itemStack.getDamage();
-                    int remaining = maxDamage - currentDamage;
-                    double percent = ((double) remaining / maxDamage) * 100.0;
-                    durabilityText = String.format("%.0f%%", percent);
-                } else if (!itemStack.isEmpty() && itemStack.isDamageable()) {
-                    durabilityText = "100%";
-                } else if (isPreview && itemStack.isEmpty()) {
-                    durabilityText = "Slot";
+            for (ItemStack it:disp) {
+                String txt="";
+                if (!it.isEmpty()&&it.isDamageable()&& it.getMaxDamage()>0) {
+                    int rem=it.getMaxDamage()-it.getDamage();
+                    txt = String.format("%.0f%%",(rem/(double)it.getMaxDamage())*100);
+                } else if (!it.isEmpty()&&it.isDamageable()) {
+                    txt = "100%";
+                } else if (preview&&it.isEmpty()) {
+                    txt="Slot";
                 }
+                int w=mc.textRenderer.getWidth(txt), tx=curX+(ICON_SIZE-w)/2;
+                if (!txt.isEmpty()) ctx.drawTextWithShadow(mc.textRenderer, Text.literal(txt), tx, curY,
+                    (preview&&it.isEmpty())?0xAAAAAA:0xFFFFFF);
+                int iconY = curY + (!txt.isEmpty()?th+PADDING_BELOW_TEXT:0);
+                if (!it.isEmpty()) ctx.drawItem(it, curX, iconY);
+                else if (preview) ctx.fill(curX,iconY,curX+ICON_SIZE,iconY+ICON_SIZE,0x50808080);
 
-                int textWidth = client.textRenderer.getWidth(durabilityText);
-                int textX = currentX + (ICON_SIZE - textWidth) / 2;
-                if (!durabilityText.isEmpty()) {
-                    drawContext.drawTextWithShadow(
-                        client.textRenderer,
-                        Text.literal(durabilityText),
-                        textX,
-                        currentY,
-                        (isPreview && itemStack.isEmpty()) ? 0xAAAAAA : 0xFFFFFF
-                    );
-                }
-
-                int iconY = currentY + (!durabilityText.isEmpty() ? textHeight + PADDING_BELOW_TEXT : 0);
-                if (!itemStack.isEmpty()) {
-                    drawContext.drawItem(itemStack, currentX, iconY);
-                } else if (isPreview) {
-                    drawContext.fill(
-                        currentX, iconY,
-                        currentX + ICON_SIZE,
-                        iconY + ICON_SIZE,
-                        0x50808080
-                    );
-                }
-
-                currentY += (!durabilityText.isEmpty() ? textHeight + PADDING_BELOW_TEXT : 0)
-                            + ICON_SIZE
-                            + SPACING_BETWEEN_ITEMS;
+                curY += (!txt.isEmpty()?th+PADDING_BELOW_TEXT:0) + ICON_SIZE + SPACING_BETWEEN_ITEMS;
             }
         }
     }
